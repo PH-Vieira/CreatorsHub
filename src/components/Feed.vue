@@ -1,32 +1,56 @@
 <template>
   <div class="min-h-screen bg-black text-white">
-    <header class="bg-gray-800 p-4 border-b border-gray-700">
-      <div class="max-w-2xl mx-auto flex justify-between items-center">
-        <h1 class="text-2xl font-bold text-cyan-400">CreatorsHub Feed</h1>
-        <div class="flex items-center gap-3">
+    <header class="border-b border-gray-800 bg-gradient-to-r from-black via-gray-900 to-black">
+      <div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-4 py-5">
+        <div class="flex items-center gap-4">
+          <div class="flex h-12 w-12 items-center justify-center rounded-full border border-cyan-500/60 bg-cyan-500/10 text-lg font-black tracking-tight text-cyan-300">
+            CH
+          </div>
+          <div>
+            <p class="text-2xl font-black tracking-tight text-white">CreatorsHub</p>
+            <p class="text-xs uppercase tracking-[0.3em] text-cyan-400">Create • Share • Inspire</p>
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <router-link
+            to="/feed"
+            class="inline-flex items-center rounded-full border border-gray-700/80 bg-gray-800/60 px-4 py-2 text-sm font-semibold text-gray-200 transition hover:border-cyan-500/60 hover:text-white"
+          >
+            Feed
+          </router-link>
           <button
             v-if="authStore.isCreator"
             @click="openPostModal"
-            class="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded font-semibold transition"
+            class="inline-flex items-center gap-2 rounded-full bg-cyan-500/90 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition hover:bg-cyan-400"
           >
-            Novo post
+            <span>+</span>
+            <span>Novo post</span>
           </button>
           <router-link
             to="/profile"
-            class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded font-semibold transition"
+            class="flex items-center gap-2 rounded-full border border-gray-700/70 bg-gray-800/70 px-3 py-1.5 text-sm font-medium text-gray-200 transition hover:border-cyan-500/60 hover:text-white"
           >
-            Perfil
+            <div class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-gray-700 text-xs font-semibold text-gray-300">
+              <img
+                v-if="authStore.profile?.avatar_url"
+                :src="authStore.profile.avatar_url"
+                :alt="profileDisplayName"
+                class="h-full w-full object-cover"
+              />
+              <span v-else>{{ profileInitial }}</span>
+            </div>
+            <span>{{ profileDisplayName }}</span>
           </router-link>
           <button
             @click="handleLogout"
-            class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded font-semibold transition"
+            class="inline-flex items-center rounded-full border border-gray-700/80 px-4 py-2 text-sm font-semibold text-gray-300 transition hover:border-red-500/60 hover:text-red-300"
           >
             Logout
           </button>
         </div>
       </div>
     </header>
-    <main class="max-w-2xl mx-auto p-4">
+    <main class="mx-auto max-w-3xl px-4 py-6">
       <!-- Post Creation Modal -->
       <transition name="fade">
         <div
@@ -63,7 +87,8 @@
         <div
           v-for="post in postsStore.posts"
           :key="post.id"
-          class="bg-gray-800 p-4 rounded-lg border border-gray-700"
+          :ref="(el) => registerPostRef(post.id, el)"
+          class="rounded-2xl border border-gray-800 bg-gray-900/70 p-5 shadow-lg shadow-black/30 backdrop-blur-sm"
         >
           <div class="flex items-start justify-between mb-3">
             <div class="flex items-center">
@@ -122,7 +147,8 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { gsap } from 'gsap'
 import { useAuthStore } from '@/stores/auth'
 import { usePostsStore } from '@/stores/posts'
 import { useRouter } from 'vue-router'
@@ -135,8 +161,43 @@ const postsStore = usePostsStore()
 const router = useRouter()
 const showPostModal = ref(false)
 const loadMoreRef = ref(null)
+const postElements = new Map()
+const animatedPosts = new Set()
 
 let loadObserver = null
+
+const profileDisplayName = computed(() => authStore.profile?.full_name || authStore.user?.email || 'Seu perfil')
+const profileInitial = computed(() => profileDisplayName.value.charAt(0).toUpperCase())
+
+const registerPostRef = (postId, el) => {
+  if (el) {
+    postElements.set(postId, el)
+  } else {
+    postElements.delete(postId)
+    animatedPosts.delete(postId)
+  }
+}
+
+const animateNewPosts = (postIds) => {
+  postIds.forEach((postId, index) => {
+    if (animatedPosts.has(postId)) return
+    const element = postElements.get(postId)
+    if (!element) return
+    gsap.fromTo(
+      element,
+      { autoAlpha: 0, y: 24, scale: 0.98 },
+      {
+        autoAlpha: 1,
+        y: 0,
+        scale: 1,
+        duration: 0.6,
+        ease: 'power2.out',
+        delay: index * 0.08
+      }
+    )
+    animatedPosts.add(postId)
+  })
+}
 
 const observeSentinel = () => {
   if (!loadMoreRef.value || !postsStore.hasMore) {
@@ -167,6 +228,7 @@ onMounted(async () => {
 
   nextTick(() => {
     observeSentinel()
+    animateNewPosts(postsStore.posts.map((post) => post.id))
   })
 })
 
@@ -221,11 +283,23 @@ watch(
   }
 )
 
+watch(
+  () => postsStore.posts.map((post) => post.id),
+  (postIds) => {
+    nextTick(() => {
+      animateNewPosts(postIds)
+    })
+  },
+  { immediate: true }
+)
+
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
   if (loadObserver) {
     loadObserver.disconnect()
   }
+  postElements.clear()
+  animatedPosts.clear()
 })
 
 const handleDeletePost = async (postId) => {

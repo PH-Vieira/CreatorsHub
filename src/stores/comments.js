@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 
 export const useCommentsStore = defineStore('comments', () => {
   const commentsByPost = ref({})
+  const countsByPost = ref({})
   const loadingByPost = ref({})
   const errorsByPost = ref({})
   const loadedPosts = ref({})
@@ -25,11 +26,22 @@ export const useCommentsStore = defineStore('comments', () => {
     commentsByPost.value = { ...commentsByPost.value, [postId]: comments }
   }
 
+  const setCount = (postId, count) => {
+    countsByPost.value = { ...countsByPost.value, [postId]: count }
+  }
+
   const getCommentsForPost = (postId) => commentsByPost.value[postId] || []
-  const getCommentCount = (postId) => getCommentsForPost(postId).length
+  const getCommentCount = (postId) => {
+    const stored = countsByPost.value[postId]
+    if (typeof stored === 'number') {
+      return stored
+    }
+    return getCommentsForPost(postId).length
+  }
   const isLoading = (postId) => !!loadingByPost.value[postId]
   const getError = (postId) => errorsByPost.value[postId] || null
   const hasLoaded = (postId) => !!loadedPosts.value[postId]
+  const hasCount = (postId) => typeof countsByPost.value[postId] === 'number'
 
   async function fetchComments(postId) {
     if (!postId) return { success: false, error: 'Invalid post' }
@@ -60,6 +72,7 @@ export const useCommentsStore = defineStore('comments', () => {
       if (error) throw error
 
       setComments(postId, data || [])
+      setCount(postId, data?.length || 0)
       setLoaded(postId, true)
       return { success: true, data: data || [] }
     } catch (error) {
@@ -111,6 +124,7 @@ export const useCommentsStore = defineStore('comments', () => {
 
       const existing = getCommentsForPost(postId)
       setComments(postId, [...existing, data])
+      setCount(postId, getCommentCount(postId) + 1)
       return { success: true, data }
     } catch (error) {
       return { success: false, error: error.message }
@@ -145,14 +159,42 @@ export const useCommentsStore = defineStore('comments', () => {
     }
   }
 
+  async function fetchCommentCount(postId) {
+    if (!postId) return { success: false, error: 'Invalid post' }
+
+    try {
+      const { count, error } = await supabase
+        .from('comments')
+        .select('id', { count: 'exact', head: true })
+        .eq('post_id', postId)
+
+      if (error) throw error
+
+      setCount(postId, count || 0)
+      return { success: true, data: count || 0 }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  async function ensureCommentCount(postId) {
+    if (hasCount(postId)) {
+      return { success: true, data: getCommentCount(postId) }
+    }
+    return fetchCommentCount(postId)
+  }
+
   return {
     fetchComments,
     addComment,
     deleteComment,
+    fetchCommentCount,
+    ensureCommentCount,
     getCommentsForPost,
     getCommentCount,
     isLoading,
     getError,
-    hasLoaded
+    hasLoaded,
+    hasCount
   }
 })

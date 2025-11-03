@@ -56,7 +56,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useCommentsStore } from '@/stores/comments'
 import { useAuthStore } from '@/stores/auth'
 import CommentItem from '@/components/CommentItem.vue'
@@ -100,6 +100,10 @@ const commentsTree = computed(() => {
   })
 
   return roots
+})
+
+onMounted(() => {
+  commentsStore.ensureCommentCount(props.postId)
 })
 
 const replyingLabel = computed(() => {
