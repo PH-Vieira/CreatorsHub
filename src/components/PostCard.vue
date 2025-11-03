@@ -27,13 +27,20 @@
 
       <div class="flex items-center gap-2 text-xs">
         <button
+          type="button"
           v-if="isAdmin"
           @click="handleTogglePin"
-          class="rounded-full border border-cyan-500/50 px-3 py-1 font-semibold text-cyan-200 transition hover:border-cyan-300 hover:text-cyan-100"
+          :disabled="isPinning"
+          class="rounded-full border border-cyan-500/50 px-3 py-1 font-semibold text-cyan-200 transition hover:border-cyan-300 hover:text-cyan-100 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
         >
-          {{ post.is_pinned ? 'Desafixar post' : 'Fixar post' }}
+          <svg v-if="isPinning" class="h-4 w-4 animate-spin text-cyan-200" viewBox="0 0 24 24" fill="none">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+          </svg>
+          <span>{{ isPinning ? (post.is_pinned ? 'Desafixando...' : 'Fixando...') : (post.is_pinned ? 'Desafixar post' : 'Fixar post') }}</span>
         </button>
         <button
+          type="button"
           v-if="isAdmin"
           @click="handleDelete"
           class="rounded-full border border-red-500/50 px-3 py-1 font-semibold text-red-300 transition hover:border-red-400 hover:text-red-200"
@@ -59,23 +66,25 @@
     <div class="mt-5 flex flex-wrap items-center justify-between gap-3 text-sm">
       <div class="flex items-center gap-3">
         <button
-          class="flex items-center gap-1 rounded-full border px-3 py-1 font-semibold transition"
+          type="button"
+          class="flex items-center gap-2 rounded-full border px-3 py-1 font-semibold transition"
           :class="post.user_vote === 1 ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300' : 'border-gray-700 bg-gray-800 text-gray-200 hover:border-emerald-500/50 hover:text-emerald-200'"
           @click="handleVote(1)"
         >
-          ▲
-          <span>Upvote</span>
+          <span class="text-sm">▲</span>
+          <span>Curtir</span>
+          <span class="ml-2 text-xs text-gray-400">{{ upvotes }}</span>
         </button>
-        <span class="rounded-full border border-gray-700 bg-gray-900/60 px-3 py-1 text-slate-200">
-          Score {{ score }} · {{ upvotes }}↑ / {{ downvotes }}↓
-        </span>
+
         <button
-          class="flex items-center gap-1 rounded-full border px-3 py-1 font-semibold transition"
+          type="button"
+          class="flex items-center gap-2 rounded-full border px-3 py-1 font-semibold transition"
           :class="post.user_vote === -1 ? 'border-rose-500/60 bg-rose-500/10 text-rose-300' : 'border-gray-700 bg-gray-800 text-gray-200 hover:border-rose-500/50 hover:text-rose-200'"
           @click="handleVote(-1)"
         >
-          ▼
-          <span>Downvote</span>
+          <span class="text-sm">▼</span>
+          <span>Descurtir</span>
+          <span class="ml-2 text-xs text-gray-400">{{ downvotes }}</span>
         </button>
       </div>
 
@@ -98,6 +107,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { gsap } from 'gsap'
 import { useAuthStore } from '@/stores/auth'
 import { usePostsStore } from '@/stores/posts'
 import ReactionBar from '@/components/ReactionBar.vue'
@@ -127,7 +137,7 @@ onBeforeUnmount(() => {
 })
 
 const displayName = computed(() => {
-  return props.post.users?.full_name || props.post.users?.username || props.post.users?.email || 'Usuário'
+  return props.post.users?.username || props.post.users?.full_name || props.post.users?.email || 'Usuário'
 })
 
 const initials = computed(() => displayName.value.charAt(0).toUpperCase())
@@ -177,12 +187,27 @@ const handleFavorite = async () => {
   }
 }
 
-const handleTogglePin = async () => {
-  const { success, error } = await postsStore.togglePostPin(props.post.id, !props.post.is_pinned)
-  if (!success && error) {
-    window.alert(error)
+  const isPinning = ref(false)
+
+  const handleTogglePin = async () => {
+    if (isPinning.value) return
+    // close any open popups (emoji picker, etc.) that may block the UI
+    window.dispatchEvent(new CustomEvent('close-all-popups'))
+    isPinning.value = true
+    const { success, error } = await postsStore.togglePostPin(props.post.id, !props.post.is_pinned)
+    isPinning.value = false
+    if (!success && error) {
+      window.alert(error)
+    }
+    // visual feedback: briefly pulse the card to indicate change
+    try {
+      if (rootEl.value) {
+        gsap.fromTo(rootEl.value, { scale: 0.995 }, { scale: 1, duration: 0.18, ease: 'power1.out' })
+      }
+    } catch (e) {
+      // ignore
+    }
   }
-}
 
 const handleDelete = async () => {
   if (!isAdmin.value) return

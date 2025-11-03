@@ -68,7 +68,7 @@ const emit = defineEmits(['create-post', 'logout'])
 const route = useRoute()
 const authStore = useAuthStore()
 
-const profileDisplayName = computed(() => authStore.profile?.full_name || authStore.user?.email || 'Seu perfil')
+const profileDisplayName = computed(() => authStore.profile?.username || authStore.profile?.full_name || authStore.user?.email || 'Seu perfil')
 const profileInitial = computed(() => profileDisplayName.value.charAt(0).toUpperCase())
 
 const linkClasses = (path) => {

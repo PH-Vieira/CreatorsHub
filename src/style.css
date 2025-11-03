@@ -25,3 +25,13 @@
 .animate-pin-glow {
 	animation: pinGlow 3s ease-in-out infinite;
 }
+
+/* Pull-to-refresh indicator smoothing */
+.pull-indicator {
+  transition: transform 160ms cubic-bezier(.2,.8,.2,1), opacity 200ms;
+}
+
+/* Smooth transform for feed container fallback */
+.feed-translate {
+	transition: transform 300ms cubic-bezier(.2,.8,.2,1);
+}

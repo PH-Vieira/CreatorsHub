@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "gsap": "^3.12.5",
+    "emoji-picker-element": "^1.8.3",
     "@supabase/supabase-js": "^2.78.0",
     "pinia": "^3.0.3",
     "vue": "^3.5.22",

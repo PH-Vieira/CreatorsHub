@@ -32,6 +32,7 @@ export const usePostsStore = defineStore('posts', () => {
     const postIds = postList.map((post) => post.id)
 
     let votesData = []
+    let commentsData = []
     let favoritesData = []
 
     const votesResponse = await supabase
@@ -42,6 +43,20 @@ export const usePostsStore = defineStore('posts', () => {
     if (!votesResponse.error) {
       votesData = votesResponse.data || []
     }
+
+    // Fetch comment counts
+    const commentsPromises = postIds.map(async (id) => {
+      const { count, error } = await supabase
+        .from('comments')
+        .select('id', { count: 'exact', head: true })
+        .eq('post_id', id)
+      return { postId: id, count: error ? 0 : (count || 0) }
+    })
+    const commentsResults = await Promise.all(commentsPromises)
+    commentsData = commentsResults.reduce((acc, { postId, count }) => {
+      acc[postId] = count
+      return acc
+    }, {})
 
     if (authStore.user) {
       const favoritesResponse = await supabase
@@ -80,7 +95,8 @@ export const usePostsStore = defineStore('posts', () => {
       ...post,
       vote_summary: voteSummaryMap[post.id] || { upvotes: 0, downvotes: 0, score: 0 },
       user_vote: userVoteMap[post.id] || 0,
-      is_favorited: favoritesSet.has(post.id)
+      is_favorited: favoritesSet.has(post.id),
+      comment_count: commentsData[post.id] || 0
     }))
   }
 
@@ -448,6 +464,49 @@ export const usePostsStore = defineStore('posts', () => {
     }
   }
 
+  async function fetchPostUpdates(postId) {
+    try {
+      // Fetch updated vote summary
+      const votesResponse = await supabase
+        .from('post_votes')
+        .select('post_id, value')
+        .eq('post_id', postId)
+
+      if (votesResponse.error) throw votesResponse.error
+
+      const votesData = votesResponse.data || []
+      const voteSummary = { upvotes: 0, downvotes: 0, score: 0 }
+
+      votesData.forEach((vote) => {
+        if (vote.value === 1) voteSummary.upvotes += 1
+        else if (vote.value === -1) voteSummary.downvotes += 1
+      })
+      voteSummary.score = voteSummary.upvotes - voteSummary.downvotes
+
+      // Fetch comment count
+      const commentsResponse = await supabase
+        .from('comments')
+        .select('id', { count: 'exact', head: true })
+        .eq('post_id', postId)
+
+      if (commentsResponse.error) throw commentsResponse.error
+
+      const commentCount = commentsResponse.count || 0
+
+      // Update the post in state
+      updatePostInState(postId, (target) => ({
+        ...target,
+        vote_summary: voteSummary,
+        comment_count: commentCount
+      }))
+
+      return { success: true }
+    } catch (error) {
+      console.error('Error updating post:', error)
+      return { success: false, error: error.message }
+    }
+  }
+
   return {
     posts,
     loading,
@@ -463,6 +522,7 @@ export const usePostsStore = defineStore('posts', () => {
     togglePostVote,
     toggleFavorite,
     togglePostPin,
-    fetchFavoritePosts
+    fetchFavoritePosts,
+    fetchPostUpdates
   }
 })

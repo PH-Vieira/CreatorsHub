@@ -28,26 +28,28 @@
 
           <div class="flex flex-col items-center text-xs text-gray-400">
             <button
+              type="button"
               class="rounded-full p-1 transition"
               :class="comment.user_vote === 1 ? 'text-emerald-400 bg-emerald-500/10' : 'hover:text-emerald-300 hover:bg-emerald-500/10'"
               @click="handleVote(1)"
-              aria-label="Upvote"
+              aria-label="Curtir"
             >
               ▲
             </button>
             <span class="py-1 text-sm font-semibold text-slate-100">{{ score }}</span>
             <button
+              type="button"
               class="rounded-full p-1 transition"
               :class="comment.user_vote === -1 ? 'text-rose-400 bg-rose-500/10' : 'hover:text-rose-300 hover:bg-rose-500/10'"
               @click="handleVote(-1)"
-              aria-label="Downvote"
+              aria-label="Descurtir"
             >
               ▼
             </button>
           </div>
         </div>
 
-        <p class="mt-3 text-sm text-gray-200">{{ comment.content }}</p>
+        <p class="mt-1 text-sm text-gray-200">{{ comment.content }}</p>
 
         <div class="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-400">
           <span class="rounded bg-gray-800/60 px-2 py-0.5 text-[11px] text-slate-200">
@@ -55,6 +57,7 @@
           </span>
 
           <button
+            type="button"
             v-if="canPin"
             @click="emit('toggle-pin', comment)"
             class="rounded-full border border-amber-400/40 px-3 py-1 font-semibold text-amber-200 transition hover:border-amber-300 hover:text-amber-100"
@@ -63,6 +66,7 @@
           </button>
 
           <button
+            type="button"
             v-if="canDelete"
             @click="emit('delete', comment)"
             class="font-semibold text-red-400 transition hover:text-red-300"
@@ -71,6 +75,7 @@
           </button>
 
           <button
+            type="button"
             @click="emit('reply', comment)"
             class="font-semibold text-cyan-400 transition hover:text-cyan-300"
           >
@@ -124,7 +129,7 @@ const props = defineProps({
 const emit = defineEmits(['reply', 'delete', 'vote', 'toggle-pin'])
 
 const displayName = computed(() => {
-  return props.comment.users?.full_name || props.comment.users?.username || props.comment.users?.email || 'Usuário'
+  return props.comment.users?.username || props.comment.users?.full_name || props.comment.users?.email || 'Usuário'
 })
 
 const initials = computed(() => displayName.value.charAt(0).toUpperCase())
@@ -139,10 +144,10 @@ const upvotes = computed(() => props.comment.vote_summary?.upvotes ?? 0)
 const downvotes = computed(() => props.comment.vote_summary?.downvotes ?? 0)
 
 const containerClasses = computed(() => [
-  'space-y-4 rounded-2xl border px-4 py-4 transition',
+  'space-y-4 rounded-2xl px-4 py-4 transition',
   props.comment.is_pinned
-    ? 'border-amber-400/60 bg-amber-500/10 shadow-lg shadow-amber-500/20 animate-pin-glow'
-    : 'border-gray-800 bg-gray-900/40 shadow-inner shadow-black/20'
+    ? 'bg-amber-500/10 shadow-lg shadow-amber-500/20 animate-pin-glow'
+    : 'bg-gray-900/40 shadow-inner shadow-black/20'
 ])
 
 const handleVote = (value) => {
