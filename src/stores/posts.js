@@ -274,6 +274,8 @@ export const usePostsStore = defineStore('posts', () => {
             post_id: postId,
             user_id: authStore.user.id,
             value
+          }, {
+            onConflict: 'post_id,user_id'
           })
 
         if (error) throw error

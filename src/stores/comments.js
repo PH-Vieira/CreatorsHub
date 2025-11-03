@@ -262,6 +262,8 @@ export const useCommentsStore = defineStore('comments', () => {
             comment_id: commentId,
             user_id: authStore.user.id,
             value
+          }, {
+            onConflict: 'comment_id,user_id'
           })
 
         if (error) throw error
