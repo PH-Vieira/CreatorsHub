@@ -127,7 +127,10 @@ const loadReactions = async () => {
 const reactionData = computed(() => reactionsStore.getReactionData(props.entityId, props.entityType))
 const displayedEmojis = computed(() => {
   const counts = reactionData.value.counts || {}
-  return Object.keys(counts).filter((emoji) => (counts[emoji] || 0) > 0)
+  return Object.keys(counts)
+    .filter((emoji) => (counts[emoji] || 0) > 0)
+    .sort((a, b) => (counts[b] || 0) - (counts[a] || 0))
+    .slice(0, 5)
 })
 const totalCount = computed(() => reactionData.value.total || 0)
 
