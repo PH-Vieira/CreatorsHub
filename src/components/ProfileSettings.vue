@@ -1,20 +1,15 @@
 <template>
   <div class="min-h-screen bg-black text-white">
-    <header class="bg-gray-800 p-4 border-b border-gray-700">
-      <div class="max-w-2xl mx-auto flex items-center justify-between">
-        <h1 class="text-2xl font-bold text-cyan-400">Meu Perfil</h1>
-        <button
-          @click="goBack"
-          class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded font-semibold transition"
-        >
-          Voltar
-        </button>
+    <NavigationBar @logout="handleLogout" />
+    <main class="mx-auto max-w-3xl px-4 py-6">
+      <div class="mb-4 flex items-center justify-between">
+        <div class="text-sm text-gray-400">Perfil</div>
       </div>
-    </header>
 
-    <main class="max-w-2xl mx-auto p-4">
-      <div class="bg-gray-800 p-6 rounded-lg border border-gray-700 space-y-6">
-        <div class="flex items-center gap-4">
+      <!-- Profile Form Card -->
+      <div class="rounded-2xl border border-gray-800 bg-gray-900/70 p-5 shadow-lg shadow-black/30 backdrop-blur-sm mb-8">
+        <h2 class="text-xl font-bold text-cyan-400 mb-6">Configurações do Perfil</h2>
+        <div class="flex items-center gap-4 mb-6">
           <div class="relative">
             <img
               v-if="form.avatar_url"
@@ -31,7 +26,7 @@
           </div>
           <div>
             <p class="text-sm text-gray-400 mb-2">Foto de perfil</p>
-            <label class="inline-flex items-center px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded cursor-pointer transition">
+            <label class="inline-flex items-center px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-full border border-cyan-500/50 font-semibold transition cursor-pointer">
               <input type="file" accept="image/*" class="hidden" @change="handleAvatarSelect" />
               {{ avatarUploading ? 'Enviando...' : 'Trocar imagem' }}
             </label>
@@ -89,21 +84,22 @@
           <button
             type="submit"
             :disabled="saving"
-            class="w-full bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-600 text-white py-2 rounded font-semibold transition"
+            class="w-full bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-600 text-white py-2 rounded-full font-semibold transition"
           >
             {{ saving ? 'Salvando...' : 'Salvar alterações' }}
           </button>
         </form>
 
-        <p v-if="successMessage" class="text-green-500 text-sm">{{ successMessage }}</p>
-        <p v-if="formError" class="text-red-500 text-sm">{{ formError }}</p>
+        <p v-if="successMessage" class="text-green-500 text-sm mt-4">{{ successMessage }}</p>
+        <p v-if="formError" class="text-red-500 text-sm mt-4">{{ formError }}</p>
       </div>
 
-      <div class="mt-8">
+      <!-- Posts Section -->
+      <div class="rounded-2xl border border-gray-800 bg-gray-900/70 p-5 shadow-lg shadow-black/30 backdrop-blur-sm">
         <h2 class="text-xl font-bold text-cyan-400 mb-4">Meus Posts</h2>
         <div v-if="postsStore.loadingUserPosts" class="text-center text-gray-400">Carregando posts...</div>
         <div v-else-if="postsStore.userPosts.length === 0" class="text-gray-400">Você ainda não criou nenhum post.</div>
-        <div v-else class="space-y-6">
+        <div v-else class="space-y-4">
           <PostCard
             v-for="post in postsStore.userPosts"
             :key="post.id"
@@ -159,6 +155,7 @@ import { useAuthStore } from '@/stores/auth'
 import { usePostsStore } from '@/stores/posts'
 import { onMounted } from 'vue'
 import PostCard from '@/components/PostCard.vue'
+import NavigationBar from '@/components/NavigationBar.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -259,8 +256,9 @@ const handleSubmit = async () => {
   successMessage.value = 'Perfil atualizado com sucesso'
 }
 
-const goBack = () => {
-  router.back()
+const handleLogout = async () => {
+  await authStore.signOut()
+  router.push('/')
 }
 
 const openEditModal = (post) => {
