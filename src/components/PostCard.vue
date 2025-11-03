@@ -1,5 +1,13 @@
 <template>
-  <article ref="rootEl" :class="cardClasses">
+  <article
+    ref="rootEl"
+    :class="cardClasses"
+    role="button"
+    tabindex="0"
+    @click="handleNavigate"
+    @keydown.enter.prevent="handleNavigate"
+    @keydown.space.prevent="handleNavigate"
+  >
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="flex items-start gap-3">
         <div class="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-gray-700 text-sm font-semibold">
@@ -29,7 +37,7 @@
         <button
           type="button"
           v-if="isAdmin"
-          @click="handleTogglePin"
+          @click.stop="handleTogglePin"
           :disabled="isPinning"
           class="rounded-full border border-cyan-500/50 px-3 py-1 font-semibold text-cyan-200 transition hover:border-cyan-300 hover:text-cyan-100 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
         >
@@ -42,7 +50,7 @@
         <button
           type="button"
           v-if="isAdmin"
-          @click="handleDelete"
+          @click.stop="handleDelete"
           class="rounded-full border border-red-500/50 px-3 py-1 font-semibold text-red-300 transition hover:border-red-400 hover:text-red-200"
         >
           Excluir
@@ -69,7 +77,7 @@
           type="button"
           class="flex items-center gap-2 rounded-full border px-3 py-1 font-semibold transition"
           :class="post.user_vote === 1 ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300' : 'border-gray-700 bg-gray-800 text-gray-200 hover:border-emerald-500/50 hover:text-emerald-200'"
-          @click="handleVote(1)"
+          @click.stop="handleVote(1)"
         >
           <span class="text-sm">▲</span>
           <span>Curtir</span>
@@ -80,7 +88,7 @@
           type="button"
           class="flex items-center gap-2 rounded-full border px-3 py-1 font-semibold transition"
           :class="post.user_vote === -1 ? 'border-rose-500/60 bg-rose-500/10 text-rose-300' : 'border-gray-700 bg-gray-800 text-gray-200 hover:border-rose-500/50 hover:text-rose-200'"
-          @click="handleVote(-1)"
+          @click.stop="handleVote(-1)"
         >
           <span class="text-sm">▼</span>
           <span>Descurtir</span>
@@ -89,7 +97,7 @@
       </div>
 
       <button
-        @click="handleFavorite"
+        @click.stop="handleFavorite"
         class="inline-flex items-center gap-2 rounded-full border px-3 py-1 font-semibold transition"
         :class="isFavorited ? 'border-amber-400/70 bg-amber-500/10 text-amber-200' : 'border-gray-700 bg-gray-800 text-gray-200 hover:border-amber-400/60 hover:text-amber-100'"
       >
@@ -98,7 +106,7 @@
       </button>
     </div>
 
-    <div class="mt-5 space-y-4">
+    <div class="mt-5 space-y-4" data-stop-navigation>
       <ReactionBar :entity-id="post.id" entity-type="post" />
       <CommentSection :post-id="post.id" :post-owner-id="post.user_id" />
     </div>
@@ -110,6 +118,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { gsap } from 'gsap'
 import { useAuthStore } from '@/stores/auth'
 import { usePostsStore } from '@/stores/posts'
+import { useRouter } from 'vue-router'
 import ReactionBar from '@/components/ReactionBar.vue'
 import CommentSection from '@/components/CommentSection.vue'
 
@@ -125,6 +134,8 @@ const emit = defineEmits(['mounted', 'unmounted'])
 const rootEl = ref(null)
 const authStore = useAuthStore()
 const postsStore = usePostsStore()
+const router = useRouter()
+const isPinning = ref(false)
 
 onMounted(() => {
   if (rootEl.value) {
@@ -166,12 +177,37 @@ const isFavorited = computed(() => !!props.post.is_favorited)
 const isAdmin = computed(() => (typeof authStore.isAdmin === 'boolean' ? authStore.isAdmin : !!authStore.isAdmin?.value))
 
 const cardClasses = computed(() => {
-  const base = 'rounded-2xl border border-gray-800 bg-gray-900/70 p-5 shadow-lg shadow-black/30 backdrop-blur-sm transition'
+  const base = 'rounded-2xl border border-gray-800 bg-gray-900/70 p-5 shadow-lg shadow-black/30 backdrop-blur-sm transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black'
   if (props.post.is_pinned) {
     return [base, 'border-cyan-400/70 bg-cyan-500/10 animate-pin-glow']
   }
   return [base]
 })
+
+const handleNavigate = (event) => {
+  if (!props.post?.id) return
+
+  const currentRoute = router.currentRoute.value
+  if (currentRoute?.name === 'PostDetails' && String(currentRoute.params?.id) === String(props.post.id)) {
+    return
+  }
+
+  const target = event?.target
+  if (target && typeof target.closest === 'function') {
+    const interactive = target.closest('button, a, input, textarea, select, label, [data-stop-navigation]')
+    if (interactive) {
+      return
+    }
+  }
+
+  try {
+    window.dispatchEvent(new CustomEvent('close-all-popups'))
+  } catch (e) {
+    // ignore
+  }
+
+  router.push({ name: 'PostDetails', params: { id: props.post.id } })
+}
 
 const handleVote = async (value) => {
   const { success, error } = await postsStore.togglePostVote(props.post.id, value)
@@ -186,8 +222,6 @@ const handleFavorite = async () => {
     window.alert(error)
   }
 }
-
-  const isPinning = ref(false)
 
   const handleTogglePin = async () => {
     if (isPinning.value) return

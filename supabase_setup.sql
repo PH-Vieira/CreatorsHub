@@ -13,11 +13,15 @@ CREATE TABLE IF NOT EXISTS public.users (
   phone TEXT,
   document TEXT,
   avatar_url TEXT,
-  role text[] DEFAULT '{}' CHECK (role <@ ARRAY['admin', 'moderator', 'creator', 'viewer']::text[])
+  role text[] DEFAULT ARRAY['viewer', 'creator']::text[] CHECK (role <@ ARRAY['admin', 'moderator', 'creator', 'viewer']::text[])
 );
 
 ALTER TABLE public.users
-  ALTER COLUMN role SET DEFAULT '{}';
+  ALTER COLUMN role SET DEFAULT ARRAY['viewer', 'creator']::text[];
+
+UPDATE public.users
+  SET role = ARRAY['viewer', 'creator']::text[]
+  WHERE COALESCE(array_length(role, 1), 0) = 0;
 
 CREATE TABLE IF NOT EXISTS public.posts (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -161,6 +165,24 @@ BEGIN
   ) THEN
     EXECUTE 'CREATE POLICY "Admins can update user roles" ON public.users
       FOR UPDATE USING (public.is_admin(auth.uid()))';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'users' AND policyname = 'Users can update own profile data'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Users can update own profile data" ON public.users
+      FOR UPDATE USING (auth.uid() = id)
+      WITH CHECK (
+        auth.uid() = id
+        AND NOT (ARRAY[''admin'', ''moderator'']::text[] && COALESCE(role, ARRAY[]::text[]))
+      )';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'users' AND policyname = 'Anyone can view public profiles'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Anyone can view public profiles" ON public.users
+      FOR SELECT USING (true)';
   END IF;
 END;
 $$;
@@ -397,9 +419,21 @@ $$;
 -- Function to handle new user signup (set role to null)
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  meta JSONB := NEW.raw_user_meta_data;
 BEGIN
-  INSERT INTO public.users (id, email, username, full_name, phone, document, avatar_url, role)
-  VALUES (NEW.id, NEW.email, NULL, NULL, NULL, NULL, NULL, NULL);
+  INSERT INTO public.users (id, email, username, full_name, phone, document, avatar_url)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    NULLIF(meta->>'username', ''),
+    NULLIF(meta->>'full_name', ''),
+    NULLIF(meta->>'phone', ''),
+    NULL,
+    NULLIF(meta->>'avatar_url', '')
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

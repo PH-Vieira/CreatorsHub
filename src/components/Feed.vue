@@ -233,6 +233,7 @@ const observeSentinel = () => {
 }
 
 onMounted(async () => {
+  document.title = 'CreatorsHub • Feed'
   if (postsStore.posts.length === 0) {
     await postsStore.fetchPosts()
   }

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AuthLanding from '@/components/AuthLanding.vue'
+import AuthCallback from '@/components/AuthCallback.vue'
 import Feed from '@/components/Feed.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -13,9 +14,21 @@ const router = createRouter({
       meta: { requiresAuth: false }
     },
     {
+      path: '/auth/callback',
+      name: 'AuthCallback',
+      component: AuthCallback,
+      meta: { requiresAuth: false }
+    },
+    {
       path: '/feed',
       name: 'Feed',
       component: Feed,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/posts/:id',
+      name: 'PostDetails',
+      component: () => import('@/components/PostDetails.vue'),
       meta: { requiresAuth: true }
     },
     {

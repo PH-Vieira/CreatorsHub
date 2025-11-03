@@ -15,9 +15,17 @@ export const useAuthStore = defineStore('auth', () => {
   const isAdmin = computed(() => profile.value?.role?.includes('admin'))
   const isCreator = computed(() => profile.value?.role?.includes('creator') || profile.value?.role?.includes('admin'))
 
-  async function initializeAuth() {
-    if (initialized.value) return
-    if (initPromise) return initPromise
+  async function initializeAuth({ force = false } = {}) {
+    if (!force && initialized.value) return
+    if (!force && initPromise) return initPromise
+
+    if (force && initPromise) {
+      await initPromise
+    }
+
+    if (force) {
+      initialized.value = false
+    }
 
     initPromise = (async () => {
       loading.value = true
@@ -61,12 +69,25 @@ export const useAuthStore = defineStore('auth', () => {
         .from('users')
         .select('*')
         .eq('id', user.value.id)
-        .single()
+        .maybeSingle()
 
-      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+      if (error && error.code !== 'PGRST116') {
         console.error('Error fetching profile:', error)
-      } else {
+        return
+      }
+
+      if (data) {
         profile.value = data
+        return
+      }
+
+      const metadata = user.value.user_metadata || {}
+      profile.value = {
+        id: user.value.id,
+        email: user.value.email,
+        full_name: metadata.full_name || null,
+        username: metadata.username || null,
+        role: []
       }
     } catch (error) {
       console.error('Error fetching profile:', error)
@@ -93,12 +114,42 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function signInWithProvider(provider) {
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`
+        }
+      })
+
+      if (error) throw error
+
+      if (data?.url) {
+        window.location.href = data.url
+      }
+
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  }
+
   async function signUp({ email, password, fullName, username }) {
     loading.value = true
     try {
+      const sanitizedFullName = fullName?.trim() || null
+      const sanitizedUsername = username?.trim() || null
+
       const { data, error } = await supabase.auth.signUp({
         email,
-        password
+        password,
+        options: {
+          data: {
+            full_name: sanitizedFullName || undefined,
+            username: sanitizedUsername || undefined
+          }
+        }
       })
 
       if (error) throw error
@@ -107,27 +158,24 @@ export const useAuthStore = defineStore('auth', () => {
 
       if (data.user && data.session) {
         user.value = data.user
+        const updatePayload = {}
 
-        const { data: profileData, error: profileError } = await supabase
-          .from('users')
-          .upsert(
-            {
-              id: data.user.id,
-              email,
-              full_name: fullName?.trim() || null,
-              username: username?.trim() || null,
-              role: 'viewer'
-            },
-            { onConflict: 'id' }
-          )
-          .select()
-          .single()
+        if (sanitizedFullName) updatePayload.full_name = sanitizedFullName
+        if (sanitizedUsername) updatePayload.username = sanitizedUsername
 
-        if (profileError && profileError.code !== 'PGRST116') {
-          throw profileError
+        if (Object.keys(updatePayload).length > 0) {
+          const { error: profileError } = await supabase
+            .from('users')
+            .update(updatePayload)
+            .eq('id', data.user.id)
+            .select()
+            .maybeSingle()
+
+          if (profileError && profileError.code !== 'PGRST116') {
+            throw profileError
+          }
         }
 
-        profile.value = profileData || profile.value
         await fetchProfile()
       }
 
@@ -162,9 +210,14 @@ export const useAuthStore = defineStore('auth', () => {
         .update(updates)
         .eq('id', user.value.id)
         .select()
-        .single()
+        .maybeSingle()
 
       if (error) throw error
+
+      if (!data) {
+        await fetchProfile()
+        return { success: true }
+      }
 
       profile.value = data
       return { success: true }
@@ -226,6 +279,7 @@ export const useAuthStore = defineStore('auth', () => {
     signOut,
     updateProfile,
     uploadAvatar,
+    signInWithProvider,
     signUp
   }
 })

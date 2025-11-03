@@ -76,6 +76,23 @@
               </button>
             </div>
 
+            <div class="mb-6 space-y-3">
+              <button
+                type="button"
+                class="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-semibold text-gray-200 transition hover:border-white/20 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="isOauthLoading"
+                @click="handleProviderLogin('google')"
+              >
+                <span class="flex h-6 w-6 items-center justify-center rounded-full bg-white text-sm font-bold text-gray-900">G</span>
+                <span>{{ isOauthLoading ? 'Conectando...' : 'Continuar com Google' }}</span>
+              </button>
+              <div class="flex items-center gap-3 text-xs text-gray-500">
+                <span class="h-px flex-1 bg-white/10"></span>
+                <span>ou continue com email</span>
+                <span class="h-px flex-1 bg-white/10"></span>
+              </div>
+            </div>
+
             <transition name="fade" mode="out-in">
               <form
                 v-if="mode === 'login'"
@@ -223,7 +240,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
@@ -232,6 +249,7 @@ const authStore = useAuthStore()
 const mode = ref('login')
 const errorMessage = ref('')
 const successMessage = ref('')
+const isOauthLoading = ref(false)
 
 const loginForm = reactive({
   email: '',
@@ -247,6 +265,10 @@ const signUpForm = reactive({
 })
 
 const isLoading = computed(() => authStore.loading)
+
+onMounted(() => {
+  document.title = 'CreatorsHub • Comunidade de Criadores'
+})
 
 const switchMode = (value) => {
   mode.value = value
@@ -324,5 +346,17 @@ const handleSignUp = async () => {
 
   successMessage.value = 'Conta criada com sucesso! Personalize seu perfil e comece a postar.'
   router.push('/feed')
+}
+
+const handleProviderLogin = async (provider) => {
+  if (isOauthLoading.value) return
+  errorMessage.value = ''
+  successMessage.value = ''
+  isOauthLoading.value = true
+  const result = await authStore.signInWithProvider(provider)
+  if (!result.success) {
+    errorMessage.value = result.error || 'Não foi possível iniciar a autenticação.'
+    isOauthLoading.value = false
+  }
 }
 </script>

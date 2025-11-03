@@ -98,7 +98,58 @@
         <p v-if="successMessage" class="text-green-500 text-sm">{{ successMessage }}</p>
         <p v-if="formError" class="text-red-500 text-sm">{{ formError }}</p>
       </div>
+
+      <div class="mt-8">
+        <h2 class="text-xl font-bold text-cyan-400 mb-4">Meus Posts</h2>
+        <div v-if="postsStore.loadingUserPosts" class="text-center text-gray-400">Carregando posts...</div>
+        <div v-else-if="postsStore.userPosts.length === 0" class="text-gray-400">Você ainda não criou nenhum post.</div>
+        <div v-else class="space-y-4">
+          <div v-for="post in postsStore.userPosts" :key="post.id" class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+            <h3 class="font-semibold text-white">{{ post.title }}</h3>
+            <p class="text-sm text-gray-300 mt-2">{{ post.content }}</p>
+            <div class="mt-4 flex gap-2">
+              <button @click="openEditModal(post)" class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded transition">Editar</button>
+              <button @click="confirmDelete(post.id)" class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded transition">Excluir</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
+
+    <!-- Edit Modal -->
+    <div v-if="editingPost" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-gray-800 p-6 rounded-lg border border-gray-700 max-w-md w-full mx-4">
+        <h3 class="text-lg font-bold text-cyan-400 mb-4">Editar Post</h3>
+        <form @submit.prevent="saveEdit">
+          <div class="mb-4">
+            <label for="edit-title" class="block text-gray-300 mb-2">Título</label>
+            <input
+              id="edit-title"
+              v-model="editForm.title"
+              type="text"
+              class="w-full px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              required
+            />
+          </div>
+          <div class="mb-4">
+            <label for="edit-content" class="block text-gray-300 mb-2">Conteúdo</label>
+            <textarea
+              id="edit-content"
+              v-model="editForm.content"
+              class="w-full px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              rows="4"
+              required
+            ></textarea>
+          </div>
+          <div class="flex gap-2">
+            <button type="submit" :disabled="savingEdit" class="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-600 text-white rounded transition">
+              {{ savingEdit ? 'Salvando...' : 'Salvar' }}
+            </button>
+            <button type="button" @click="closeEditModal" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded transition">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -106,9 +157,12 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { usePostsStore } from '@/stores/posts'
+import { onMounted } from 'vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const postsStore = usePostsStore()
 
 const form = reactive({
   username: '',
@@ -123,6 +177,9 @@ const successMessage = ref('')
 const formError = ref('')
 const avatarError = ref('')
 const avatarUploading = ref(false)
+const editingPost = ref(null)
+const editForm = reactive({ title: '', content: '' })
+const savingEdit = ref(false)
 
 watch(
   () => authStore.profile,
@@ -136,6 +193,12 @@ watch(
   },
   { immediate: true }
 )
+
+onMounted(async () => {
+  if (authStore.user) {
+    await postsStore.fetchUserPosts(authStore.user.id)
+  }
+})
 
 const fallbackInitials = computed(() => {
   const source = form.full_name || form.username || authStore.user?.email || 'U'
@@ -198,6 +261,45 @@ const handleSubmit = async () => {
 
 const goBack = () => {
   router.back()
+}
+
+const openEditModal = (post) => {
+  editingPost.value = post
+  editForm.title = post.title
+  editForm.content = post.content
+}
+
+const closeEditModal = () => {
+  editingPost.value = null
+  editForm.title = ''
+  editForm.content = ''
+}
+
+const saveEdit = async () => {
+  if (!editingPost.value) return
+  savingEdit.value = true
+  const { success, error } = await postsStore.updatePost(editingPost.value.id, {
+    title: editForm.title,
+    content: editForm.content
+  })
+  savingEdit.value = false
+  if (success) {
+    closeEditModal()
+    await postsStore.fetchUserPosts(authStore.user.id)
+  } else {
+    alert('Erro ao salvar: ' + error)
+  }
+}
+
+const confirmDelete = async (postId) => {
+  if (confirm('Tem certeza que deseja excluir este post?')) {
+    const { success, error } = await postsStore.deletePost(postId)
+    if (success) {
+      await postsStore.fetchUserPosts(authStore.user.id)
+    } else {
+      alert('Erro ao excluir: ' + error)
+    }
+  }
 }
 </script>
 ```

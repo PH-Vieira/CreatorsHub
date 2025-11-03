@@ -12,6 +12,9 @@ export const usePostsStore = defineStore('posts', () => {
   const pageSize = 3
   const favoritePosts = ref([])
   const loadingFavorites = ref(false)
+  const postDetails = ref({})
+  const userPosts = ref([])
+  const loadingUserPosts = ref(false)
 
   const authStore = useAuthStore()
 
@@ -108,6 +111,17 @@ export const usePostsStore = defineStore('posts', () => {
       return post
     })
     sortPosts()
+  }
+
+  const cachePostDetail = (postId, payload) => {
+    postDetails.value = { ...postDetails.value, [postId]: payload }
+  }
+
+  const updatePostDetail = (postId, updater) => {
+    const existing = postDetails.value[postId]
+    if (!existing) return
+    const updated = updater({ ...existing })
+    postDetails.value = { ...postDetails.value, [postId]: updated }
   }
 
   async function fetchPosts({ reset = true } = {}) {
@@ -219,7 +233,42 @@ export const usePostsStore = defineStore('posts', () => {
 
       posts.value = posts.value.filter((post) => post.id !== postId)
       favoritePosts.value = favoritePosts.value.filter((fav) => fav.id !== postId)
+      if (postDetails.value[postId]) {
+        const cloned = { ...postDetails.value }
+        delete cloned[postId]
+        postDetails.value = cloned
+      }
       return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  async function updatePost(postId, updates) {
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .update(updates)
+        .eq('id', postId)
+        .select(`
+          *,
+          users:user_id (
+            username,
+            full_name,
+            avatar_url,
+            email
+          )
+        `)
+        .single()
+
+      if (error) throw error
+
+      const [decorated] = await decoratePosts([data])
+      updatePostInState(postId, () => decorated)
+      updatePostDetail(postId, () => decorated)
+      // Update userPosts if it exists
+      userPosts.value = userPosts.value.map((post) => post.id === postId ? decorated : post)
+      return { success: true, data: decorated }
     } catch (error) {
       return { success: false, error: error.message }
     }
@@ -297,7 +346,7 @@ export const usePostsStore = defineStore('posts', () => {
         if (error) throw error
       }
 
-      updatePostInState(postId, (target) => {
+      const applyVoteUpdate = (target) => {
         const summary = { ...(target.vote_summary || { upvotes: 0, downvotes: 0, score: 0 }) }
 
         if (currentVote === 1) summary.upvotes = Math.max(0, summary.upvotes - 1)
@@ -311,7 +360,10 @@ export const usePostsStore = defineStore('posts', () => {
         target.vote_summary = summary
         target.user_vote = newVote
         return target
-      })
+      }
+
+      updatePostInState(postId, applyVoteUpdate)
+      updatePostDetail(postId, applyVoteUpdate)
 
       return { success: true }
     } catch (error) {
@@ -352,6 +404,11 @@ export const usePostsStore = defineStore('posts', () => {
       }
 
       updatePostInState(postId, (target) => {
+        target.is_favorited = !isFavorited
+        return target
+      })
+
+      updatePostDetail(postId, (target) => {
         target.is_favorited = !isFavorited
         return target
       })
@@ -411,6 +468,11 @@ export const usePostsStore = defineStore('posts', () => {
       if (error) throw error
 
       updatePostInState(postId, (target) => ({
+        ...target,
+        ...updates
+      }))
+
+      updatePostDetail(postId, (target) => ({
         ...target,
         ...updates
       }))
@@ -500,9 +562,169 @@ export const usePostsStore = defineStore('posts', () => {
         comment_count: commentCount
       }))
 
+      updatePostDetail(postId, (target) => ({
+        ...target,
+        vote_summary: voteSummary,
+        comment_count: commentCount
+      }))
+
       return { success: true }
     } catch (error) {
       console.error('Error updating post:', error)
+      return { success: false, error: error.message }
+    }
+  }
+
+  async function fetchUserPosts(userId) {
+    if (!userId) {
+      userPosts.value = []
+      return { success: false, error: 'User ID inválido' }
+    }
+
+    loadingUserPosts.value = true
+
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .select(`
+          *,
+          users:user_id (
+            username,
+            full_name,
+            avatar_url,
+            email
+          )
+        `)
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      const fetched = await decoratePosts(data || [])
+      userPosts.value = fetched
+      return { success: true, data: fetched }
+    } catch (error) {
+      console.error('Error fetching user posts:', error)
+      return { success: false, error: error.message }
+    } finally {
+      loadingUserPosts.value = false
+    }
+  }
+
+  async function fetchPostById(postId) {
+    if (!postId) {
+      return { success: false, error: 'Post inválido' }
+    }
+
+    const cached = postDetails.value[postId]
+    if (cached) {
+      return { success: true, data: cached }
+    }
+
+    const baseSelect = `
+      *,
+      users:user_id (
+        username,
+        full_name,
+        avatar_url,
+        email
+      )
+    `
+
+    let postData = null
+    let fetchError = null
+
+    const fetchWithMedia = async () => supabase
+      .from('posts')
+      .select(`
+        ${baseSelect},
+        media:post_media (
+          id,
+          type,
+          url,
+          thumbnail_url,
+          sort_order,
+          created_at,
+          description
+        )
+      `)
+      .eq('id', postId)
+      .maybeSingle()
+
+    const fetchWithoutMedia = async () => supabase
+      .from('posts')
+      .select(baseSelect)
+      .eq('id', postId)
+      .maybeSingle()
+
+    try {
+      const { data, error } = await fetchWithMedia()
+
+      if (error) {
+        const details = `${error?.code || ''} ${error?.message || ''} ${error?.details || ''}`.toLowerCase()
+        if (
+          error.code === '42P01' ||
+          details.includes('post_media') ||
+          details.includes('relationship')
+        ) {
+          const { data: fallbackData, error: fallbackError } = await fetchWithoutMedia()
+          postData = fallbackData
+          fetchError = fallbackError
+        } else {
+          fetchError = error
+        }
+      } else {
+        postData = data
+      }
+    } catch (error) {
+      const message = `${error?.code || ''} ${error?.message || ''}`.toLowerCase()
+      if (message.includes('post_media') || message.includes('relationship')) {
+        const { data: fallbackData, error: fallbackError } = await fetchWithoutMedia()
+        postData = fallbackData
+        fetchError = fallbackError
+      } else {
+        fetchError = error
+      }
+    }
+
+    if (fetchError) {
+      return { success: false, error: fetchError.message || 'Não foi possível carregar o post.' }
+    }
+
+    if (!postData) {
+      return { success: false, error: 'Post não encontrado' }
+    }
+
+    try {
+      const [decorated] = await decoratePosts([postData])
+      if (!decorated) {
+        return { success: false, error: 'Post não encontrado' }
+      }
+
+      const withMedia = {
+        ...decorated,
+        media: Array.isArray(decorated.media)
+          ? [...decorated.media].sort((a, b) => {
+              const orderA = typeof a?.sort_order === 'number' ? a.sort_order : 0
+              const orderB = typeof b?.sort_order === 'number' ? b.sort_order : 0
+              return orderA - orderB
+            })
+          : []
+      }
+
+      cachePostDetail(postId, withMedia)
+
+      // keep feed cache updated if the post already exists there
+      const hasPost = posts.value.some((item) => item.id === postId)
+      if (!hasPost) {
+        posts.value = [...posts.value, withMedia]
+        sortPosts()
+      } else {
+        updatePostInState(postId, () => withMedia)
+      }
+
+      return { success: true, data: withMedia }
+    } catch (error) {
       return { success: false, error: error.message }
     }
   }
@@ -514,15 +736,21 @@ export const usePostsStore = defineStore('posts', () => {
     hasMore,
     favoritePosts,
     loadingFavorites,
+    postDetails,
+    userPosts,
+    loadingUserPosts,
     fetchPosts,
     fetchMore,
     createPost,
     deletePost,
+    updatePost,
     uploadImage,
     togglePostVote,
     toggleFavorite,
     togglePostPin,
     fetchFavoritePosts,
+    fetchUserPosts,
+    fetchPostById,
     fetchPostUpdates
   }
 })
