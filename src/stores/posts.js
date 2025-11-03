@@ -638,7 +638,7 @@ export const usePostsStore = defineStore('posts', () => {
       .from('posts')
       .select(`
         ${baseSelect},
-        media:post_media (
+        post_media (
           id,
           type,
           url,
@@ -703,8 +703,8 @@ export const usePostsStore = defineStore('posts', () => {
 
       const withMedia = {
         ...decorated,
-        media: Array.isArray(decorated.media)
-          ? [...decorated.media].sort((a, b) => {
+        media: Array.isArray(decorated.post_media)
+          ? [...decorated.post_media].sort((a, b) => {
               const orderA = typeof a?.sort_order === 'number' ? a.sort_order : 0
               const orderB = typeof b?.sort_order === 'number' ? b.sort_order : 0
               return orderA - orderB

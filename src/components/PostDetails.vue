@@ -41,16 +41,32 @@
               </div>
               <div>
                 <div class="flex items-center gap-3">
-                  <h1 class="text-2xl font-semibold text-slate-100">{{ post.title || 'Post sem título' }}</h1>
+                  <div v-if="isEditing" class="flex-1">
+                    <input
+                      v-model="editForm.title"
+                      type="text"
+                      class="w-full px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-cyan-500 text-2xl font-semibold"
+                      placeholder="Título do post"
+                    />
+                  </div>
+                  <div v-else>
+                    <h1 class="text-2xl font-semibold text-slate-100">{{ post.title || 'Post sem título' }}</h1>
+                  </div>
                   <span
                     v-if="post.is_pinned"
                     class="rounded-full border border-cyan-400/60 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200"
                   >
                     Post fixado
                   </span>
-                  <div v-if="isOwner" class="flex gap-2">
+                  <div v-if="isOwner && !isEditing" class="flex gap-2">
                     <button @click="openEditModal" class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-sm transition">Editar</button>
                     <button @click="confirmDelete" class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-sm transition">Excluir</button>
+                  </div>
+                  <div v-if="isEditing" class="flex gap-2">
+                    <button @click="saveEdit" :disabled="savingEdit" class="px-3 py-1 bg-green-500 hover:bg-green-600 disabled:bg-gray-600 text-white rounded text-sm transition">
+                      {{ savingEdit ? 'Salvando...' : 'Salvar' }}
+                    </button>
+                    <button @click="closeEditModal" class="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm transition">Cancelar</button>
                   </div>
                 </div>
                 <p class="mt-1 text-sm text-gray-400">
@@ -82,29 +98,39 @@
 
         <section class="grid gap-10 lg:grid-cols-[minmax(0,2.3fr)_minmax(0,1fr)]">
           <div class="space-y-8">
-            <div v-if="heroVideo" class="overflow-hidden rounded-3xl border border-white/10 bg-black/40">
+            <div v-if="heroVideo" class="overflow-hidden rounded-3xl border border-white/10 bg-black/40 relative">
               <video
                 :src="heroVideo"
                 controls
                 playsinline
                 class="h-full w-full max-h-[520px] rounded-3xl object-cover"
               ></video>
+              <button v-if="isEditing" @click="deleteMedia('video')" class="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+              </button>
             </div>
 
-            <div v-else-if="heroImage" class="overflow-hidden rounded-3xl border border-white/10 bg-black/40">
+            <div v-else-if="heroImage" class="overflow-hidden rounded-3xl border border-white/10 bg-black/40 relative">
               <img
                 :src="heroImage.url"
                 :alt="heroImage.alt"
                 class="h-full w-full max-h-[520px] object-cover"
                 loading="lazy"
               />
+              <button v-if="isEditing" @click="deleteMedia('image', heroImage.url)" class="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+              </button>
             </div>
 
             <div v-if="additionalImages.length" class="grid gap-4 sm:grid-cols-2">
               <figure
                 v-for="image in additionalImages"
                 :key="image.id || image.url"
-                class="group overflow-hidden rounded-2xl border border-white/10 bg-white/5"
+                class="group overflow-hidden rounded-2xl border border-white/10 bg-white/5 relative"
               >
                 <img
                   :src="image.url"
@@ -113,21 +139,66 @@
                   loading="lazy"
                 />
                 <figcaption v-if="image.description" class="px-4 py-3 text-xs text-gray-400">{{ image.description }}</figcaption>
+                <button v-if="isEditing" @click="deleteMedia('image', image.url)" class="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                  </svg>
+                </button>
               </figure>
             </div>
 
+            <div v-if="isEditing" class="rounded-3xl border border-white/10 bg-white/5 p-6">
+              <h3 class="text-lg font-semibold text-slate-100 mb-4">Adicionar mídia</h3>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                @change="handleFileSelect"
+                class="block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-cyan-500 file:text-white hover:file:bg-cyan-600"
+              />
+              <div v-if="newMediaFiles.length" class="mt-4 grid gap-4 sm:grid-cols-2">
+                <div v-for="(file, index) in newMediaFiles" :key="index" class="relative">
+                  <img v-if="file.type.startsWith('image')" :src="file.preview" class="h-32 w-full object-cover rounded" />
+                  <video v-else :src="file.preview" class="h-32 w-full object-cover rounded" controls></video>
+                  <button @click="removeNewMedia(index)" class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <article class="space-y-6 rounded-3xl border border-white/10 bg-white/5 p-6 text-base leading-relaxed text-gray-200">
-              <p v-if="!post.content" class="text-sm text-gray-500">
-                O criador ainda não adicionou uma descrição detalhada para este post.
-              </p>
-              <p v-else class="whitespace-pre-line">{{ post.content }}</p>
+              <div v-if="isEditing">
+                <textarea
+                  v-model="editForm.content"
+                  class="w-full px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  rows="6"
+                  placeholder="Conteúdo do post"
+                ></textarea>
+              </div>
+              <div v-else>
+                <p v-if="!post.content" class="text-sm text-gray-500">
+                  O criador ainda não adicionou uma descrição detalhada para este post.
+                </p>
+                <p v-else class="whitespace-pre-line">{{ post.content }}</p>
+              </div>
             </article>
           </div>
 
           <aside class="space-y-6 rounded-3xl border border-white/10 bg-white/5 p-6 text-sm text-gray-300">
             <div>
               <h2 class="text-xs font-semibold uppercase tracking-[0.3em] text-gray-500">Resumo</h2>
-              <p class="mt-3 text-base text-gray-200">
+              <div v-if="isEditing" class="mt-3">
+                <textarea
+                  v-model="editForm.summary"
+                  class="w-full px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  rows="3"
+                  placeholder="Adicione um resumo rápido do post..."
+                ></textarea>
+              </div>
+              <p v-else class="mt-3 text-base text-gray-200">
                 {{ post.summary || 'Este espaço receberá um resumo rápido do post quando o criador adicionar mais detalhes.' }}
               </p>
             </div>
@@ -158,41 +229,6 @@
       </article>
     </main>
 
-    <!-- Edit Modal -->
-    <div v-if="editingPost" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-gray-800 p-6 rounded-lg border border-gray-700 max-w-md w-full mx-4">
-        <h3 class="text-lg font-bold text-cyan-400 mb-4">Editar Post</h3>
-        <form @submit.prevent="saveEdit">
-          <div class="mb-4">
-            <label for="edit-title" class="block text-gray-300 mb-2">Título</label>
-            <input
-              id="edit-title"
-              v-model="editForm.title"
-              type="text"
-              class="w-full px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              required
-            />
-          </div>
-          <div class="mb-4">
-            <label for="edit-content" class="block text-gray-300 mb-2">Conteúdo</label>
-            <textarea
-              id="edit-content"
-              v-model="editForm.content"
-              class="w-full px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              rows="4"
-              required
-            ></textarea>
-          </div>
-          <div class="flex gap-2">
-            <button type="submit" :disabled="savingEdit" class="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-600 text-white rounded transition">
-              {{ savingEdit ? 'Salvando...' : 'Salvar' }}
-            </button>
-            <button type="button" @click="closeEditModal" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded transition">Cancelar</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
     <transition name="fade">
       <div v-if="showPostModal" class="fixed inset-0 z-50 flex items-center justify-center">
         <div class="absolute inset-0 bg-black/70" @click="closePostModal"></div>
@@ -221,6 +257,7 @@ import CommentSection from '@/components/CommentSection.vue'
 import PostForm from '@/components/PostForm.vue'
 import { usePostsStore } from '@/stores/posts'
 import { useAuthStore } from '@/stores/auth'
+import { supabase } from '@/lib/supabase'
 
 const route = useRoute()
 const router = useRouter()
@@ -232,10 +269,11 @@ const isLoading = ref(true)
 const errorMessage = ref('')
 const post = ref(null)
 const editingPost = ref(false)
-const editForm = reactive({ title: '', content: '' })
+const editForm = reactive({ title: '', content: '', summary: '' })
 const savingEdit = ref(false)
 const isEditing = ref(false)
 const newMediaFiles = ref([])
+const deletedMedia = ref([])
 
 const postId = computed(() => route.params.id)
 
@@ -380,38 +418,116 @@ const openEditModal = () => {
   isEditing.value = true
   editForm.title = post.value.title
   editForm.content = post.value.content
+  editForm.summary = post.value.summary || ''
   newMediaFiles.value = []
+  deletedMedia.value = []
 }
 
 const closeEditModal = () => {
-  editingPost.value = false
+  isEditing.value = false
   editForm.title = ''
   editForm.content = ''
+  editForm.summary = ''
+  newMediaFiles.value = []
 }
 
 const saveEdit = async () => {
   savingEdit.value = true
   const { success, error } = await postsStore.updatePost(post.value.id, {
     title: editForm.title,
-    content: editForm.content
+    content: editForm.content,
+    summary: editForm.summary
   })
-  savingEdit.value = false
-  if (success) {
-    closeEditModal()
-    await loadPost(postId.value) // Reload the post
-  } else {
+  if (!success) {
+    savingEdit.value = false
     alert('Erro ao salvar: ' + error)
+    return
   }
+
+  // Handle media deletions
+  const currentMedia = post.value.media || []
+  for (const del of deletedMedia.value) {
+    try {
+      if (del.type === 'video' && post.value.video_url === del.url) {
+        await supabase.from('posts').update({ video_url: null }).eq('id', post.value.id)
+        post.value.video_url = null
+      } else if (del.type === 'image' && post.value.image_url === del.url) {
+        await supabase.from('posts').update({ image_url: null }).eq('id', post.value.id)
+        post.value.image_url = null
+      } else {
+        // Delete from post_media
+        await supabase.from('post_media').delete().eq('post_id', post.value.id).eq('url', del.url)
+        post.value.media = currentMedia.filter(m => m.url !== del.url)
+      }
+    } catch (error) {
+      console.error('Error deleting media:', error)
+    }
+  }
+
+  // Handle new media uploads
+  const newMediaList = []
+  for (const fileObj of newMediaFiles.value) {
+    try {
+      const { success: uploadSuccess, url } = await postsStore.uploadImage(fileObj.file)
+      if (uploadSuccess) {
+        const mediaData = {
+          post_id: post.value.id,
+          type: 'image',
+          url: url,
+          sort_order: 0
+        }
+        const { data, error } = await supabase.from('post_media').insert(mediaData).select().single()
+        if (!error && data) {
+          newMediaList.push(data)
+        }
+      }
+    } catch (error) {
+      console.error('Error uploading media:', error)
+    }
+  }
+
+  // Update local state
+  post.value.media = [...(post.value.media || []), ...newMediaList]
+
+  deletedMedia.value = []
+  newMediaFiles.value = []
+  savingEdit.value = false
+  closeEditModal()
+  // No need to loadPost, since we updated locally
 }
 
 const confirmDelete = async () => {
   if (confirm('Tem certeza que deseja excluir este post?')) {
     const { success, error } = await postsStore.deletePost(post.value.id)
     if (success) {
-      router.push({ name: 'Feed' }) // Go back to feed
+      router.push({ name: 'Feed' })
     } else {
       alert('Erro ao excluir: ' + error)
     }
   }
+}
+
+const deleteMedia = (type, url) => {
+  deletedMedia.value.push({ type, url })
+}
+
+const handleFileSelect = (event) => {
+  const files = Array.from(event.target.files)
+  files.forEach(file => {
+    if (!file.type.startsWith('image/')) return // Only images for now
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      newMediaFiles.value.push({
+        file,
+        preview: e.target.result,
+        type: file.type
+      })
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+const removeNewMedia = (index) => {
+  newMediaFiles.value.splice(index, 1)
 }
 </script>

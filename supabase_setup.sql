@@ -35,7 +35,19 @@ CREATE TABLE IF NOT EXISTS public.posts (
 ALTER TABLE public.posts
   ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS pinned_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMP WITH TIME ZONE;
+  ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMP WITH TIME ZONE,
+  ADD COLUMN IF NOT EXISTS summary TEXT;
+
+CREATE TABLE IF NOT EXISTS public.post_media (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  post_id UUID REFERENCES public.posts(id) ON DELETE CASCADE NOT NULL,
+  type TEXT CHECK (type IN ('image', 'video')) NOT NULL,
+  url TEXT NOT NULL,
+  thumbnail_url TEXT,
+  sort_order INTEGER DEFAULT 0,
+  description TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 
 CREATE TABLE IF NOT EXISTS public.comments (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -109,6 +121,7 @@ ALTER TABLE public.reactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.post_votes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.comment_votes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.favorite_posts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.post_media ENABLE ROW LEVEL SECURITY;
 
 -- Function to check if user is admin (security definer to bypass RLS)
 CREATE OR REPLACE FUNCTION public.is_admin(user_id UUID)
@@ -211,10 +224,42 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'posts' AND policyname = 'Post owners can update own posts'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Post owners can update own posts" ON public.posts
+      FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id)';
+  END IF;
+
+  IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'posts' AND policyname = 'Admins can delete posts'
   ) THEN
     EXECUTE 'CREATE POLICY "Admins can delete posts" ON public.posts
       FOR DELETE USING (public.is_admin(auth.uid()))';
+  END IF;
+END;
+$$;
+
+-- RLS Policies for post_media
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'post_media' AND policyname = 'Anyone can view post media'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Anyone can view post media" ON public.post_media FOR SELECT USING (true)';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'post_media' AND policyname = 'Post owners can manage own media'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Post owners can manage own media" ON public.post_media
+      FOR ALL USING (auth.uid() = (SELECT user_id FROM public.posts WHERE id = post_id)) WITH CHECK (auth.uid() = (SELECT user_id FROM public.posts WHERE id = post_id))';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'post_media' AND policyname = 'Admins can manage all media'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Admins can manage all media" ON public.post_media
+      FOR ALL USING (public.is_admin(auth.uid())) WITH CHECK (true)';
   END IF;
 END;
 $$;
