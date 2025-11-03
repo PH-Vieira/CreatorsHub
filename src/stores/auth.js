@@ -93,6 +93,55 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function signUp({ email, password, fullName, username }) {
+    loading.value = true
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password
+      })
+
+      if (error) throw error
+
+      const requiresEmailConfirmation = !data.session
+
+      if (data.user && data.session) {
+        user.value = data.user
+
+        const { data: profileData, error: profileError } = await supabase
+          .from('users')
+          .upsert(
+            {
+              id: data.user.id,
+              email,
+              full_name: fullName?.trim() || null,
+              username: username?.trim() || null,
+              role: 'viewer'
+            },
+            { onConflict: 'id' }
+          )
+          .select()
+          .single()
+
+        if (profileError && profileError.code !== 'PGRST116') {
+          throw profileError
+        }
+
+        profile.value = profileData || profile.value
+        await fetchProfile()
+      }
+
+      return {
+        success: true,
+        requiresEmailConfirmation
+      }
+    } catch (error) {
+      return { success: false, error: error.message }
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function signOut() {
     try {
       await supabase.auth.signOut()
@@ -176,6 +225,7 @@ export const useAuthStore = defineStore('auth', () => {
     signIn,
     signOut,
     updateProfile,
-    uploadAvatar
+    uploadAvatar,
+    signUp
   }
 })

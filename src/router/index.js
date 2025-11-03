@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Login from '@/components/Login.vue'
+import AuthLanding from '@/components/AuthLanding.vue'
 import Feed from '@/components/Feed.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -9,7 +9,7 @@ const router = createRouter({
     {
       path: '/',
       name: 'Login',
-      component: Login,
+      component: AuthLanding,
       meta: { requiresAuth: false }
     },
     {
