@@ -103,15 +103,14 @@
         <h2 class="text-xl font-bold text-cyan-400 mb-4">Meus Posts</h2>
         <div v-if="postsStore.loadingUserPosts" class="text-center text-gray-400">Carregando posts...</div>
         <div v-else-if="postsStore.userPosts.length === 0" class="text-gray-400">Você ainda não criou nenhum post.</div>
-        <div v-else class="space-y-4">
-          <div v-for="post in postsStore.userPosts" :key="post.id" class="bg-gray-800 p-4 rounded-lg border border-gray-700">
-            <h3 class="font-semibold text-white">{{ post.title }}</h3>
-            <p class="text-sm text-gray-300 mt-2">{{ post.content }}</p>
-            <div class="mt-4 flex gap-2">
-              <button @click="openEditModal(post)" class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded transition">Editar</button>
-              <button @click="confirmDelete(post.id)" class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded transition">Excluir</button>
-            </div>
-          </div>
+        <div v-else class="space-y-6">
+          <PostCard
+            v-for="post in postsStore.userPosts"
+            :key="post.id"
+            :post="post"
+            compact
+            @delete="confirmDelete"
+          />
         </div>
       </div>
     </main>
@@ -159,6 +158,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { usePostsStore } from '@/stores/posts'
 import { onMounted } from 'vue'
+import PostCard from '@/components/PostCard.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()

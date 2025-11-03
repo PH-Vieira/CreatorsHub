@@ -55,6 +55,22 @@
         >
           Excluir
         </button>
+        <button
+          type="button"
+          v-if="isOwner"
+          @click.stop="handleEdit"
+          class="rounded-full border border-blue-500/50 px-3 py-1 font-semibold text-blue-200 transition hover:border-blue-400 hover:text-blue-100"
+        >
+          Editar
+        </button>
+        <button
+          type="button"
+          v-if="isOwner"
+          @click.stop="handleDeleteOwner"
+          class="rounded-full border border-red-500/50 px-3 py-1 font-semibold text-red-300 transition hover:border-red-400 hover:text-red-200"
+        >
+          Excluir
+        </button>
       </div>
     </div>
 
@@ -77,7 +93,7 @@
           type="button"
           class="flex items-center gap-2 rounded-full border px-3 py-1 font-semibold transition"
           :class="post.user_vote === 1 ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300' : 'border-gray-700 bg-gray-800 text-gray-200 hover:border-emerald-500/50 hover:text-emerald-200'"
-          @click.stop="handleVote(1)"
+          @click.stop="handleVote(1, $event)"
         >
           <span class="text-sm">▲</span>
           <span>Curtir</span>
@@ -88,7 +104,7 @@
           type="button"
           class="flex items-center gap-2 rounded-full border px-3 py-1 font-semibold transition"
           :class="post.user_vote === -1 ? 'border-rose-500/60 bg-rose-500/10 text-rose-300' : 'border-gray-700 bg-gray-800 text-gray-200 hover:border-rose-500/50 hover:text-rose-200'"
-          @click.stop="handleVote(-1)"
+          @click.stop="handleVote(-1, $event)"
         >
           <span class="text-sm">▼</span>
           <span>Descurtir</span>
@@ -106,7 +122,7 @@
       </button>
     </div>
 
-    <div class="mt-5 space-y-4" data-stop-navigation>
+    <div v-if="!compact" class="mt-5 space-y-4" data-stop-navigation>
       <ReactionBar :entity-id="post.id" entity-type="post" />
       <CommentSection :post-id="post.id" :post-owner-id="post.user_id" />
     </div>
@@ -126,10 +142,14 @@ const props = defineProps({
   post: {
     type: Object,
     required: true
+  },
+  compact: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['mounted', 'unmounted'])
+const emit = defineEmits(['mounted', 'unmounted', 'delete'])
 
 const rootEl = ref(null)
 const authStore = useAuthStore()
@@ -175,6 +195,7 @@ const downvotes = computed(() => voteSummary.value.downvotes ?? 0)
 
 const isFavorited = computed(() => !!props.post.is_favorited)
 const isAdmin = computed(() => (typeof authStore.isAdmin === 'boolean' ? authStore.isAdmin : !!authStore.isAdmin?.value))
+const isOwner = computed(() => authStore.user?.id === props.post.user_id)
 
 const cardClasses = computed(() => {
   const base = 'rounded-2xl border border-gray-800 bg-gray-900/70 p-5 shadow-lg shadow-black/30 backdrop-blur-sm transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black'
@@ -209,10 +230,17 @@ const handleNavigate = (event) => {
   router.push({ name: 'PostDetails', params: { id: props.post.id } })
 }
 
-const handleVote = async (value) => {
+const handleVote = async (value, event) => {
   const { success, error } = await postsStore.togglePostVote(props.post.id, value)
   if (!success && error) {
     window.alert(error)
+  } else {
+    // visual feedback: briefly scale the button to indicate the action
+    try {
+      gsap.fromTo(event.currentTarget, { scale: 1.1 }, { scale: 1, duration: 0.2, ease: 'power1.out' })
+    } catch (e) {
+      // ignore
+    }
   }
 }
 
@@ -252,5 +280,13 @@ const handleDelete = async () => {
   if (!success && error) {
     window.alert(error)
   }
+}
+
+const handleEdit = () => {
+  router.push({ name: 'PostDetails', params: { id: props.post.id }, query: { edit: 'true' } })
+}
+
+const handleDeleteOwner = () => {
+  emit('delete', props.post.id)
 }
 </script>

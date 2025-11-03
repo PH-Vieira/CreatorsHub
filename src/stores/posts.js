@@ -212,7 +212,19 @@ export const usePostsStore = defineStore('posts', () => {
 
       if (error) throw error
 
+      // Auto-like the post
+      const { error: voteError } = await supabase.from('post_votes').insert({
+        post_id: data.id,
+        user_id: authStore.user.id,
+        value: 1
+      })
+      if (voteError) throw voteError
+
       const [decorated] = await decoratePosts([data])
+      // Ensure the auto-like is reflected
+      decorated.user_vote = 1
+      decorated.vote_summary.upvotes += 1
+      decorated.vote_summary.score += 1
       posts.value.unshift(decorated)
       hasMore.value = true
       sortPosts()
@@ -314,7 +326,10 @@ export const usePostsStore = defineStore('posts', () => {
       return { success: false, error: 'É necessário estar autenticado' }
     }
 
-    const post = posts.value.find((item) => item.id === postId)
+    let post = posts.value.find((item) => item.id === postId)
+    if (!post) {
+      post = favoritePosts.value.find((item) => item.id === postId)
+    }
     if (!post) {
       return { success: false, error: 'Post não encontrado' }
     }
@@ -365,6 +380,14 @@ export const usePostsStore = defineStore('posts', () => {
       updatePostInState(postId, applyVoteUpdate)
       updatePostDetail(postId, applyVoteUpdate)
 
+      // Update favoritePosts if the post is favorited
+      favoritePosts.value = favoritePosts.value.map((favPost) => {
+        if (favPost.id === postId) {
+          return applyVoteUpdate({ ...favPost })
+        }
+        return favPost
+      })
+
       return { success: true }
     } catch (error) {
       return { success: false, error: error.message }
@@ -376,7 +399,10 @@ export const usePostsStore = defineStore('posts', () => {
       return { success: false, error: 'É necessário estar autenticado' }
     }
 
-    const post = posts.value.find((item) => item.id === postId)
+    let post = posts.value.find((item) => item.id === postId)
+    if (!post) {
+      post = favoritePosts.value.find((item) => item.id === postId)
+    }
     if (!post) {
       return { success: false, error: 'Post não encontrado' }
     }

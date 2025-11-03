@@ -268,12 +268,10 @@ const showPostModal = ref(false)
 const isLoading = ref(true)
 const errorMessage = ref('')
 const post = ref(null)
-const editingPost = ref(false)
 const editForm = reactive({ title: '', content: '', summary: '' })
 const savingEdit = ref(false)
 const isEditing = ref(false)
 const newMediaFiles = ref([])
-const deletedMedia = ref([])
 
 const postId = computed(() => route.params.id)
 
@@ -302,6 +300,12 @@ watch(
   () => postId.value,
   async (id) => {
     await loadPost(id)
+    // Check if edit mode
+    if (route.query.edit === 'true') {
+      openEditModal()
+      // Clear query to avoid re-triggering
+      router.replace({ name: 'PostDetails', params: { id }, query: {} })
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' })
   },
   { immediate: true }
@@ -420,7 +424,6 @@ const openEditModal = () => {
   editForm.content = post.value.content
   editForm.summary = post.value.summary || ''
   newMediaFiles.value = []
-  deletedMedia.value = []
 }
 
 const closeEditModal = () => {
@@ -433,7 +436,7 @@ const closeEditModal = () => {
 
 const saveEdit = async () => {
   savingEdit.value = true
-  const { success, error } = await postsStore.updatePost(post.value.id, {
+  const { success, error, data } = await postsStore.updatePost(post.value.id, {
     title: editForm.title,
     content: editForm.content,
     summary: editForm.summary
@@ -444,25 +447,8 @@ const saveEdit = async () => {
     return
   }
 
-  // Handle media deletions
-  const currentMedia = post.value.media || []
-  for (const del of deletedMedia.value) {
-    try {
-      if (del.type === 'video' && post.value.video_url === del.url) {
-        await supabase.from('posts').update({ video_url: null }).eq('id', post.value.id)
-        post.value.video_url = null
-      } else if (del.type === 'image' && post.value.image_url === del.url) {
-        await supabase.from('posts').update({ image_url: null }).eq('id', post.value.id)
-        post.value.image_url = null
-      } else {
-        // Delete from post_media
-        await supabase.from('post_media').delete().eq('post_id', post.value.id).eq('url', del.url)
-        post.value.media = currentMedia.filter(m => m.url !== del.url)
-      }
-    } catch (error) {
-      console.error('Error deleting media:', error)
-    }
-  }
+  // Update local post state
+  post.value = data
 
   // Handle new media uploads
   const newMediaList = []
@@ -489,7 +475,6 @@ const saveEdit = async () => {
   // Update local state
   post.value.media = [...(post.value.media || []), ...newMediaList]
 
-  deletedMedia.value = []
   newMediaFiles.value = []
   savingEdit.value = false
   closeEditModal()
@@ -507,8 +492,34 @@ const confirmDelete = async () => {
   }
 }
 
-const deleteMedia = (type, url) => {
-  deletedMedia.value.push({ type, url })
+const deleteMedia = async (type, url) => {
+  if (!confirm('Tem certeza que deseja excluir esta mídia? Esta ação não pode ser desfeita.')) return
+
+  try {
+    if (type === 'video') {
+      const { error } = await supabase.from('posts').update({ video_url: null }).eq('id', post.value.id)
+      if (error) throw error
+      post.value.video_url = null
+    } else if (type === 'image') {
+      if (post.value.image_url === url) {
+        const { error } = await supabase.from('posts').update({ image_url: null }).eq('id', post.value.id)
+        if (error) throw error
+        post.value.image_url = null
+      } else if (post.value.cover_image_url === url) {
+        const { error } = await supabase.from('posts').update({ cover_image_url: null }).eq('id', post.value.id)
+        if (error) throw error
+        post.value.cover_image_url = null
+      } else {
+        // Delete from post_media
+        const { error } = await supabase.from('post_media').delete().eq('post_id', post.value.id).eq('url', url)
+        if (error) throw error
+        post.value.media = (post.value.media || []).filter(m => m.url !== url)
+      }
+    }
+  } catch (error) {
+    console.error('Error deleting media:', error)
+    alert('Erro ao excluir mídia: ' + error.message)
+  }
 }
 
 const handleFileSelect = (event) => {
