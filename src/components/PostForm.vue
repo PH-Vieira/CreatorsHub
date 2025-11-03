@@ -1,8 +1,8 @@
 <template>
-  <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+  <div ref="formContainer" class="rounded-2xl border border-gray-800 bg-gray-900/70 p-6 shadow-lg shadow-black/30 backdrop-blur-sm">
     <h3 class="text-white text-lg font-semibold mb-4">Criar novo post</h3>
     <form @submit.prevent="handleSubmit" class="space-y-4">
-      <div>
+      <div ref="titleGroup">
         <label for="title" class="block text-gray-300 mb-2">Título</label>
         <input
           id="title"
@@ -14,7 +14,7 @@
         />
       </div>
 
-      <div>
+      <div ref="contentGroup">
         <label for="content" class="block text-gray-300 mb-2">Conteúdo</label>
         <textarea
           id="content"
@@ -25,7 +25,18 @@
         ></textarea>
       </div>
 
-      <div>
+      <div ref="summaryGroup">
+        <label for="summary" class="block text-gray-300 mb-2">Resumo (opcional)</label>
+        <textarea
+          id="summary"
+          v-model="summary"
+          rows="2"
+          class="w-full px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-cyan-500 resize-none"
+          placeholder="Um breve resumo do post"
+        ></textarea>
+      </div>
+
+      <div ref="imageGroup">
         <label for="image" class="block text-gray-300 mb-2">Imagem (opcional)</label>
         <input
           id="image"
@@ -41,8 +52,9 @@
         <p v-if="fileError" class="text-sm text-red-500 mt-1">{{ fileError }}</p>
       </div>
 
-      <div class="flex gap-3">
+      <div ref="buttonsGroup" class="flex gap-3">
         <button
+          ref="submitBtn"
           type="submit"
           :disabled="submitting || !title.trim()"
           class="flex-1 bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-600 text-white py-2 rounded font-semibold transition"
@@ -59,11 +71,34 @@
         </button>
       </div>
     </form>
+
+    <!-- Preview Section -->
+    <div v-if="previewData.title || previewData.content" ref="previewSection" class="mt-6 pt-6 border-t border-gray-700">
+      <h4 class="text-gray-300 text-sm font-semibold mb-3">Pré-visualização</h4>
+      <div class="rounded-xl border border-gray-800 bg-gray-900/50 p-4 shadow-md">
+        <div class="flex items-start gap-3 mb-3">
+          <div class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-gray-700 text-xs font-semibold">
+            <span>{{ authStore.user?.username?.charAt(0).toUpperCase() || 'U' }}</span>
+          </div>
+          <div>
+            <p class="text-sm font-semibold text-slate-100">{{ authStore.user?.username || 'Usuário' }}</p>
+            <p class="text-xs text-gray-400">Agora</p>
+          </div>
+        </div>
+        <h3 v-if="previewData.title" class="text-lg font-semibold text-slate-100 mb-2">{{ previewData.title }}</h3>
+        <p v-if="previewData.summary" class="text-sm text-gray-300 italic mb-2">{{ previewData.summary }}</p>
+        <p v-if="previewData.content" class="text-sm text-gray-200 whitespace-pre-line mb-3">{{ previewData.content }}</p>
+        <div v-if="previewData.imageUrl" class="overflow-hidden rounded-lg border border-gray-800">
+          <img :src="previewData.imageUrl" alt="Preview" class="h-full w-full max-h-48 object-cover" />
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
+import { gsap } from 'gsap'
 import { useAuthStore } from '@/stores/auth'
 import { usePostsStore } from '@/stores/posts'
 
@@ -74,10 +109,46 @@ const emit = defineEmits(['success', 'cancel'])
 
 const title = ref('')
 const content = ref('')
+const summary = ref('')
 const selectedFile = ref(null)
 const fileError = ref('')
 const submitting = ref(false)
 const fileInput = ref(null)
+
+const formContainer = ref(null)
+const titleGroup = ref(null)
+const contentGroup = ref(null)
+const summaryGroup = ref(null)
+const imageGroup = ref(null)
+const buttonsGroup = ref(null)
+const submitBtn = ref(null)
+const previewSection = ref(null)
+
+const previewData = computed(() => ({
+  title: title.value.trim(),
+  content: content.value.trim(),
+  summary: summary.value.trim(),
+  imageUrl: selectedFile.value ? URL.createObjectURL(selectedFile.value) : null
+}))
+
+watch(previewData, () => {
+  if (previewSection.value && (previewData.value.title || previewData.value.content)) {
+    gsap.fromTo(previewSection.value, { opacity: 0.5, scale: 0.98 }, { opacity: 1, scale: 1, duration: 0.3, ease: 'power2.out' })
+  }
+}, { deep: true })
+
+onMounted(() => {
+  if (formContainer.value) {
+    gsap.set([titleGroup.value, contentGroup.value, summaryGroup.value, imageGroup.value, buttonsGroup.value], { opacity: 0, y: 20 })
+    gsap.to([titleGroup.value, contentGroup.value, summaryGroup.value, imageGroup.value, buttonsGroup.value], {
+      opacity: 1,
+      y: 0,
+      duration: 0.6,
+      stagger: 0.1,
+      ease: 'power2.out'
+    })
+  }
+})
 
 const handleFileSelect = (event) => {
   const file = event.target.files[0]
@@ -122,6 +193,11 @@ const handleSubmit = async () => {
   submitting.value = true
   fileError.value = ''
 
+  // Animate submit button
+  if (submitBtn.value) {
+    gsap.to(submitBtn.value, { scale: 0.95, duration: 0.1, yoyo: true, repeat: 1, ease: 'power1.inOut' })
+  }
+
   try {
     let imageUrl = null
     let imageSize = null
@@ -140,6 +216,7 @@ const handleSubmit = async () => {
       user_id: authStore.user.id,
       title: title.value.trim(),
       content: content.value.trim() || null,
+      summary: summary.value.trim() || null,
       image_url: imageUrl
     }
 
@@ -161,6 +238,7 @@ const handleSubmit = async () => {
 const clearForm = () => {
   title.value = ''
   content.value = ''
+  summary.value = ''
   selectedFile.value = null
   fileError.value = ''
   if (fileInput.value) {

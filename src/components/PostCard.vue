@@ -76,6 +76,8 @@
 
     <h3 v-if="post.title" class="mt-4 text-xl font-semibold text-slate-100">{{ post.title }}</h3>
 
+    <p v-if="post.summary" class="mt-3 text-sm text-gray-300 italic">{{ post.summary }}</p>
+
     <p v-if="post.content" class="mt-3 text-sm text-gray-200 whitespace-pre-line">{{ post.content }}</p>
 
     <div v-if="post.image_url" class="mt-4 overflow-hidden rounded-xl border border-gray-800">
