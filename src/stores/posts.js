@@ -50,8 +50,6 @@ export const usePostsStore = defineStore('posts', () => {
   }
 
   async function decoratePosts(postList, { signal, isStale } = {}) {
-    const authStore = useAuthStore()
-    
     const ensureNotAborted = () => {
       if (signal?.aborted) {
         throw new Error('aborted')
