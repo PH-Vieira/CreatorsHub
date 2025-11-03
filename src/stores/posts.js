@@ -4,8 +4,212 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 
 export const usePostsStore = defineStore('posts', () => {
+  const authStore = useAuthStore()
+  
+  // State
   const posts = ref([])
   const loading = ref(false)
+  const loadingMore = ref(false)
+  const hasMore = ref(true)
+  const page = ref(0)
+  const pageSize = 10
+  const favoritePosts = ref([])
+  const loadingFavorites = ref(false)
+  const postDetails = ref({})
+  const userPosts = ref([])
+  const loadingUserPosts = ref(false)
+  
+  // Fetch control variables
+  let fetchGeneration = 0
+  let activeFetchId = 0
+  let currentFetchController = null
+
+  // Helper functions
+  const sortPosts = () => {
+    posts.value.sort((a, b) => {
+      if (a.is_pinned !== b.is_pinned) {
+        return b.is_pinned ? 1 : -1
+      }
+      if (a.is_pinned && b.is_pinned) {
+        const aTime = a.pinned_at ? new Date(a.pinned_at).getTime() : 0
+        const bTime = b.pinned_at ? new Date(b.pinned_at).getTime() : 0
+        if (aTime !== bTime) return bTime - aTime
+      }
+      const aCreated = new Date(a.created_at).getTime()
+      const bCreated = new Date(b.created_at).getTime()
+      return bCreated - aCreated
+    })
+  }
+
+  const cancelActiveFetch = (reason = 'cancelled') => {
+    if (currentFetchController) {
+      currentFetchController.abort(reason)
+      currentFetchController = null
+    }
+    activeFetchId = 0
+  }
+
+  async function decoratePosts(postList, { signal, isStale } = {}) {
+    const authStore = useAuthStore()
+    
+    const ensureNotAborted = () => {
+      if (signal?.aborted) {
+        throw new Error('aborted')
+      }
+    }
+
+    const ensureFresh = () => {
+      if (typeof isStale === 'function' && isStale()) {
+        throw new Error('stale-fetch')
+      }
+    }
+
+    if (postList.length === 0) {
+      return []
+    }
+
+    const postIds = postList.map((p) => p.id)
+
+    console.log('decoratePosts: fetching votes')
+    ensureNotAborted()
+    ensureFresh()
+    
+    let votesQuery = supabase
+      .from('post_votes')
+      .select('post_id, value, user_id')
+      .in('post_id', postIds)
+    
+    if (signal) {
+      votesQuery = votesQuery.abortSignal(signal)
+    }
+    
+    const votesResponse = await votesQuery
+    const votesData = votesResponse.data || []
+
+    console.log('decoratePosts: fetching favorites')
+    ensureNotAborted()
+    ensureFresh()
+    
+    let favoritesData = []
+    if (authStore.user) {
+      let favoritesQuery = supabase
+        .from('favorite_posts')
+        .select('post_id')
+        .eq('user_id', authStore.user.id)
+        .in('post_id', postIds)
+      
+      if (signal) {
+        favoritesQuery = favoritesQuery.abortSignal(signal)
+      }
+      
+      const favoritesResponse = await favoritesQuery
+      favoritesData = favoritesResponse.data || []
+    }
+
+    console.log('decoratePosts: fetching comments count')
+    ensureNotAborted()
+    ensureFresh()
+    
+    let commentsQuery = supabase
+      .from('comments')
+      .select('post_id', { count: 'exact', head: false })
+      .in('post_id', postIds)
+    
+    if (signal) {
+      commentsQuery = commentsQuery.abortSignal(signal)
+    }
+    
+    const commentsResponse = await commentsQuery
+    const commentsData = {}
+    
+    if (!commentsResponse.error && commentsResponse.data) {
+      commentsResponse.data.forEach((comment) => {
+        commentsData[comment.post_id] = (commentsData[comment.post_id] || 0) + 1
+      })
+    }
+
+    const voteSummaryMap = {}
+    const userVoteMap = {}
+
+    postIds.forEach((id) => {
+      voteSummaryMap[id] = { upvotes: 0, downvotes: 0, score: 0 }
+    })
+
+    votesData.forEach((vote) => {
+      if (!voteSummaryMap[vote.post_id]) {
+        voteSummaryMap[vote.post_id] = { upvotes: 0, downvotes: 0, score: 0 }
+      }
+      if (vote.value === 1) {
+        voteSummaryMap[vote.post_id].upvotes += 1
+      } else if (vote.value === -1) {
+        voteSummaryMap[vote.post_id].downvotes += 1
+      }
+      voteSummaryMap[vote.post_id].score = voteSummaryMap[vote.post_id].upvotes - voteSummaryMap[vote.post_id].downvotes
+
+      if (vote.user_id === authStore.user?.id) {
+        userVoteMap[vote.post_id] = vote.value
+      }
+    })
+
+    const favoritesSet = new Set(favoritesData.map((fav) => fav.post_id))
+
+    console.log('decoratePosts: fetching users')
+    ensureNotAborted()
+    ensureFresh()
+    
+    const userIds = [...new Set(postList.map(p => p.user_id))]
+    const usersMap = {}
+    
+    if (userIds.length > 0) {
+      let usersQuery = supabase
+        .from('users')
+        .select('id, username, full_name, avatar_url, email')
+        .in('id', userIds)
+      
+      if (signal) {
+        usersQuery = usersQuery.abortSignal(signal)
+      }
+      
+      const usersResponse = await usersQuery
+
+      if (!usersResponse.error) {
+        usersResponse.data.forEach((u) => {
+          usersMap[u.id] = u
+        })
+      }
+    }
+
+    return postList.map((post) => ({
+      ...post,
+      users: usersMap[post.user_id] || null,
+      vote_summary: voteSummaryMap[post.id] || { upvotes: 0, downvotes: 0, score: 0 },
+      user_vote: userVoteMap[post.id] || 0,
+      is_favorited: favoritesSet.has(post.id),
+      comment_count: commentsData[post.id] || 0
+    }))
+  }
+
+  const updatePostInState = (postId, updater) => {
+    posts.value = posts.value.map((post) => {
+      if (post.id === postId) {
+        return updater({ ...post })
+      }
+      return post
+    })
+    sortPosts()
+  }
+
+  const cachePostDetail = (postId, payload) => {
+    postDetails.value = { ...postDetails.value, [postId]: payload }
+  }
+
+  const updatePostDetail = (postId, updater) => {
+    const existing = postDetails.value[postId]
+    if (!existing) return
+    const updated = updater({ ...existing })
+    postDetails.value = { ...postDetails.value, [postId]: updated }
+  }
+
   async function fetchPosts({ reset = true } = {}) {
     console.log('fetchPosts called with reset:', reset)
     if (reset) {
@@ -115,184 +319,6 @@ export const usePostsStore = defineStore('posts', () => {
     }
   }
 
-      }
-      if (vote.value === 1) {
-        voteSummaryMap[vote.post_id].upvotes += 1
-      } else if (vote.value === -1) {
-        voteSummaryMap[vote.post_id].downvotes += 1
-      }
-      voteSummaryMap[vote.post_id].score = voteSummaryMap[vote.post_id].upvotes - voteSummaryMap[vote.post_id].downvotes
-
-      if (vote.user_id === authStore.user?.id) {
-        userVoteMap[vote.post_id] = vote.value
-      }
-    })
-
-    const favoritesSet = new Set(favoritesData.map((fav) => fav.post_id))
-
-    console.log('decoratePosts: fetching users')
-    ensureNotAborted()
-    const userIds = [...new Set(postList.map(p => p.user_id))]
-    const usersMap = {}
-    if (userIds.length > 0) {
-      let usersQuery = supabase
-        .from('users')
-        .select('id, username, full_name, avatar_url, email')
-        .in('id', userIds)
-      if (signal) {
-        usersQuery = usersQuery.abortSignal(signal)
-      }
-      const usersResponse = await usersQuery
-
-      if (!usersResponse.error) {
-        usersResponse.data.forEach((u) => {
-          usersMap[u.id] = u
-        })
-      }
-    }
-
-    return postList.map((post) => ({
-      ...post,
-      users: usersMap[post.user_id] || null,
-      vote_summary: voteSummaryMap[post.id] || { upvotes: 0, downvotes: 0, score: 0 },
-      user_vote: userVoteMap[post.id] || 0,
-      is_favorited: favoritesSet.has(post.id),
-      comment_count: commentsData[post.id] || 0
-    }))
-  }
-
-  const updatePostInState = (postId, updater) => {
-    posts.value = posts.value.map((post) => {
-      if (post.id === postId) {
-        return updater({ ...post })
-      }
-      return post
-    })
-    sortPosts()
-  }
-
-  const cachePostDetail = (postId, payload) => {
-    postDetails.value = { ...postDetails.value, [postId]: payload }
-  }
-
-  const updatePostDetail = (postId, updater) => {
-    const existing = postDetails.value[postId]
-    if (!existing) return
-    const updated = updater({ ...existing })
-    postDetails.value = { ...postDetails.value, [postId]: updated }
-  }
-
-  async function fetchPosts({ reset = true } = {}) {
-    console.log('fetchPosts called with reset:', reset)
-    if (reset) {
-      loading.value = true
-      loadingMore.value = false
-      posts.value = []
-      hasMore.value = true
-      page.value = 0
-    } else {
-      if (loading.value || loadingMore.value || !hasMore.value) {
-        console.log('fetchPosts: already loading or no more, return')
-        return { success: true, data: [] }
-      }
-      loadingMore.value = true
-    }
-
-    const from = reset ? 0 : page.value * pageSize
-    const to = from + pageSize - 1
-
-    let controller = null
-
-    try {
-      if (reset) {
-        cancelActiveFetch('refresh-start')
-      }
-
-      controller = new AbortController()
-      currentFetchController = controller
-      controller.signal.addEventListener('abort', () => {
-        console.warn('fetchPosts controller abort triggered:', controller.signal.reason)
-      })
-
-      console.log('fetchPosts: making supabase query')
-      let postsQuery = supabase
-          const ensureFresh = () => {
-            if (typeof isStale === 'function' && isStale()) {
-              throw new Error('stale-fetch')
-            }
-        .order('created_at', { ascending: false })
-        .range(from, to)
-      if (controller.signal) {
-          ensureFresh()
-      }
-      const timeoutId = setTimeout(() => {
-        if (!controller.signal.aborted) {
-          controller.abort('timeout')
-      let response
-      try {
-        response = await postsQuery
-        console.log('fetchPosts: query resolved')
-      } finally {
-        clearTimeout(timeoutId)
-      }
-
-      const { data, error } = response
-            ensureFresh()
-      if (error) throw error
-
-      const fetchedRaw = data || []
-      console.log('fetchPosts: fetched', fetchedRaw.length, 'posts')
-          console.warn('decoratePosts timeout, aborting controller')
-          controller.abort('decorate-timeout')
-        }
-      }, 15000)
-
-      let fetched
-      try {
-        fetched = await decoratePosts(fetchedRaw, { signal: controller.signal })
-      } finally {
-        clearTimeout(decorateTimeoutId)
-      }
-            ensureFresh()
-      if (reset) {
-        posts.value = fetched
-      } else {
-        const existingIds = new Set(posts.value.map((post) => post.id))
-        const newItems = fetched.filter((post) => !existingIds.has(post.id))
-      if (fetched.length < pageSize) {
-        hasMore.value = false
-      }
-
-      if (fetched.length > 0) {
-        page.value += 1
-      }
-
-          ensureFresh()
-
-      return { success: true, data: fetched }
-    } catch (error) {
-      if (controller?.signal?.aborted || error?.name === 'AbortError') {
-        console.warn('fetchPosts aborted by signal')
-        return { success: false, error: 'abort' }
-      }
-      if (error?.message === 'Request timeout' || error === 'timeout') {
-        console.warn('fetchPosts timed out')
-        return { success: false, error: 'timeout' }
-      }
-      console.error('Error fetching posts:', error)
-      return { success: false, error: error.message }
-    } finally {
-      if (currentFetchController === controller) {
-        currentFetchController = null
-      }
-      if (reset) {
-        loading.value = false
-      } else {
-        loadingMore.value = false
-      }
-    }
-  }
-          ensureFresh()
   async function createPost(postData) {
     try {
       const { data, error } = await supabase
@@ -300,6 +326,9 @@ export const usePostsStore = defineStore('posts', () => {
         .insert([postData])
         .select(`
           *,
+          users:user_id (
+            username,
+            full_name,
             avatar_url,
             email
           )
