@@ -17,8 +17,11 @@
             :key="comment.id"
             :comment="comment"
             :can-delete="canModerate"
+            :can-pin="canPinComments"
             @reply="handleReply"
             @delete="handleDelete"
+            @vote="handleVote"
+            @toggle-pin="handlePin"
           />
         </div>
         <p v-else class="text-sm text-gray-400">Nenhum comentário ainda. Seja o primeiro!</p>
@@ -65,6 +68,10 @@ const props = defineProps({
   postId: {
     type: String,
     required: true
+  },
+  postOwnerId: {
+    type: String,
+    required: true
   }
 })
 
@@ -80,6 +87,8 @@ const replyingTo = ref(null)
 const commentCount = computed(() => commentsStore.getCommentCount(props.postId))
 const loading = computed(() => commentsStore.isLoading(props.postId))
 const canModerate = computed(() => authStore.profile?.role?.includes('admin') || authStore.profile?.role?.includes('moderator'))
+const resolvedIsAdmin = computed(() => (typeof authStore.isAdmin === 'boolean' ? authStore.isAdmin : !!authStore.isAdmin?.value))
+const canPinComments = computed(() => authStore.user?.id === props.postOwnerId || resolvedIsAdmin.value)
 
 const rawComments = computed(() => commentsStore.getCommentsForPost(props.postId))
 
@@ -99,6 +108,22 @@ const commentsTree = computed(() => {
     }
   })
 
+  const sortFn = (a, b) => {
+    const pinnedDiff = Number(!!b.is_pinned) - Number(!!a.is_pinned)
+    if (pinnedDiff !== 0) return pinnedDiff
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  }
+
+  const sortRecursive = (items) => {
+    items.sort(sortFn)
+    items.forEach((child) => {
+      if (child.children?.length) {
+        sortRecursive(child.children)
+      }
+    })
+  }
+
+  sortRecursive(roots)
   return roots
 })
 
@@ -168,6 +193,22 @@ const handleDelete = async (comment) => {
   const { success, error } = await commentsStore.deleteComment(comment.id)
   if (!success) {
     window.alert(error || 'Erro ao excluir comentário')
+  }
+}
+
+const handleVote = async ({ commentId, value }) => {
+  const result = await commentsStore.toggleCommentVote(props.postId, commentId, value)
+  if (!result.success && result.error) {
+    window.alert(result.error)
+  }
+}
+
+const handlePin = async (comment) => {
+  if (!canPinComments.value) return
+  const shouldPin = !comment.is_pinned
+  const result = await commentsStore.toggleCommentPin(props.postId, comment.id, shouldPin)
+  if (!result.success && result.error) {
+    window.alert(result.error)
   }
 }
 </script>

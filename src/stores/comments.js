@@ -9,6 +9,7 @@ export const useCommentsStore = defineStore('comments', () => {
   const loadingByPost = ref({})
   const errorsByPost = ref({})
   const loadedPosts = ref({})
+  const authStore = useAuthStore()
 
   const setLoading = (postId, value) => {
     loadingByPost.value = { ...loadingByPost.value, [postId]: value }
@@ -23,7 +24,7 @@ export const useCommentsStore = defineStore('comments', () => {
   }
 
   const setComments = (postId, comments) => {
-    commentsByPost.value = { ...commentsByPost.value, [postId]: comments }
+    commentsByPost.value = { ...commentsByPost.value, [postId]: sortCommentArray(comments) }
   }
 
   const setCount = (postId, count) => {
@@ -42,6 +43,71 @@ export const useCommentsStore = defineStore('comments', () => {
   const getError = (postId) => errorsByPost.value[postId] || null
   const hasLoaded = (postId) => !!loadedPosts.value[postId]
   const hasCount = (postId) => typeof countsByPost.value[postId] === 'number'
+
+  const sortCommentArray = (list) => {
+    return [...list].sort((a, b) => {
+      const pinnedDiff = Number(!!b.is_pinned) - Number(!!a.is_pinned)
+      if (pinnedDiff !== 0) return pinnedDiff
+
+      const pinnedAtA = a.pinned_at ? new Date(a.pinned_at).getTime() : 0
+      const pinnedAtB = b.pinned_at ? new Date(b.pinned_at).getTime() : 0
+      if (pinnedAtB !== pinnedAtA) return pinnedAtB - pinnedAtA
+
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    })
+  }
+
+  const decorateComments = async (postId, comments) => {
+    if (!comments.length) return comments
+
+    const commentIds = comments.map((comment) => comment.id)
+
+    let votesData = []
+    const votesResponse = await supabase
+      .from('comment_votes')
+      .select('comment_id, user_id, value')
+      .in('comment_id', commentIds)
+
+    if (!votesResponse.error) {
+      votesData = votesResponse.data || []
+    }
+
+    const authStore = useAuthStore()
+
+    const summaryMap = {}
+    const userVoteMap = {}
+
+    votesData.forEach((vote) => {
+      if (!summaryMap[vote.comment_id]) {
+        summaryMap[vote.comment_id] = { upvotes: 0, downvotes: 0, score: 0 }
+      }
+
+      if (vote.value === 1) summaryMap[vote.comment_id].upvotes += 1
+      if (vote.value === -1) summaryMap[vote.comment_id].downvotes += 1
+      summaryMap[vote.comment_id].score = summaryMap[vote.comment_id].upvotes - summaryMap[vote.comment_id].downvotes
+
+      if (vote.user_id === authStore.user?.id) {
+        userVoteMap[vote.comment_id] = vote.value
+      }
+    })
+
+    return comments.map((comment) => ({
+      ...comment,
+      vote_summary: summaryMap[comment.id] || { upvotes: 0, downvotes: 0, score: 0 },
+      user_vote: userVoteMap[comment.id] || 0
+    }))
+  }
+
+  const updateCommentInPost = (postId, commentId, updater) => {
+    const existing = getCommentsForPost(postId)
+    const updated = existing.map((comment) => {
+      if (comment.id === commentId) {
+        return updater({ ...comment })
+      }
+      return comment
+    })
+    setComments(postId, updated)
+  }
 
   async function fetchComments(postId) {
     if (!postId) return { success: false, error: 'Invalid post' }
@@ -71,7 +137,8 @@ export const useCommentsStore = defineStore('comments', () => {
 
       if (error) throw error
 
-      setComments(postId, data || [])
+      const decorated = await decorateComments(postId, data || [])
+      setComments(postId, decorated)
       setCount(postId, data?.length || 0)
       setLoaded(postId, true)
       return { success: true, data: data || [] }
@@ -88,7 +155,6 @@ export const useCommentsStore = defineStore('comments', () => {
       return { success: false, error: 'Comentário vazio' }
     }
 
-    const authStore = useAuthStore()
     if (!authStore.user) {
       return { success: false, error: 'É necessário estar autenticado' }
     }
@@ -122,8 +188,9 @@ export const useCommentsStore = defineStore('comments', () => {
 
       if (error) throw error
 
+      const [decorated] = await decorateComments(postId, [data])
       const existing = getCommentsForPost(postId)
-      setComments(postId, [...existing, data])
+      setComments(postId, [...existing, decorated])
       setCount(postId, getCommentCount(postId) + 1)
       return { success: true, data }
     } catch (error) {
@@ -152,6 +219,110 @@ export const useCommentsStore = defineStore('comments', () => {
       if (targetPostId) {
         await fetchComments(targetPostId)
       }
+
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  async function toggleCommentVote(postId, commentId, value) {
+    if (!postId || !commentId) {
+      return { success: false, error: 'Comentário inválido' }
+    }
+
+    if (!authStore.user) {
+      return { success: false, error: 'É necessário estar autenticado' }
+    }
+
+    const existing = getCommentsForPost(postId)
+    const target = existing.find((comment) => comment.id === commentId)
+
+    if (!target) {
+      return { success: false, error: 'Comentário não encontrado' }
+    }
+
+    const currentVote = target.user_vote || 0
+    let newVote = value
+
+    try {
+      if (currentVote === value) {
+        const { error } = await supabase
+          .from('comment_votes')
+          .delete()
+          .eq('comment_id', commentId)
+          .eq('user_id', authStore.user.id)
+
+        if (error) throw error
+        newVote = 0
+      } else {
+        const { error } = await supabase
+          .from('comment_votes')
+          .upsert({
+            comment_id: commentId,
+            user_id: authStore.user.id,
+            value
+          })
+
+        if (error) throw error
+      }
+
+      updateCommentInPost(postId, commentId, (comment) => {
+        const summary = { ...(comment.vote_summary || { upvotes: 0, downvotes: 0, score: 0 }) }
+
+        if (currentVote === 1) summary.upvotes = Math.max(0, summary.upvotes - 1)
+        if (currentVote === -1) summary.downvotes = Math.max(0, summary.downvotes - 1)
+
+        if (newVote === 1) summary.upvotes += 1
+        if (newVote === -1) summary.downvotes += 1
+
+        summary.score = summary.upvotes - summary.downvotes
+
+        comment.vote_summary = summary
+        comment.user_vote = newVote
+        return comment
+      })
+
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  async function toggleCommentPin(postId, commentId, shouldPin) {
+    if (!postId || !commentId) {
+      return { success: false, error: 'Comentário inválido' }
+    }
+
+    const authStore = useAuthStore()
+    if (!authStore.user) {
+      return { success: false, error: 'É necessário estar autenticado' }
+    }
+
+    try {
+      const updates = shouldPin
+        ? {
+            is_pinned: true,
+            pinned_by: authStore.user.id,
+            pinned_at: new Date().toISOString()
+          }
+        : {
+            is_pinned: false,
+            pinned_by: null,
+            pinned_at: null
+          }
+
+      const { error } = await supabase
+        .from('comments')
+        .update(updates)
+        .eq('id', commentId)
+
+      if (error) throw error
+
+      updateCommentInPost(postId, commentId, (comment) => ({
+        ...comment,
+        ...updates
+      }))
 
       return { success: true }
     } catch (error) {
@@ -188,6 +359,8 @@ export const useCommentsStore = defineStore('comments', () => {
     fetchComments,
     addComment,
     deleteComment,
+    toggleCommentVote,
+    toggleCommentPin,
     fetchCommentCount,
     ensureCommentCount,
     getCommentsForPost,

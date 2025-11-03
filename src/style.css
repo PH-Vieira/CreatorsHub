@@ -11,3 +11,17 @@
 .fade-leave-to {
 	opacity: 0;
 }
+
+@keyframes pinGlow {
+	0%,
+	100% {
+		box-shadow: 0 0 0 rgba(103, 232, 249, 0.25);
+	}
+	50% {
+		box-shadow: 0 0 24px rgba(103, 232, 249, 0.35);
+	}
+}
+
+.animate-pin-glow {
+	animation: pinGlow 3s ease-in-out infinite;
+}

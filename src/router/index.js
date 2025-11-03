@@ -19,6 +19,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/favorites',
+      name: 'Favorites',
+      component: () => import('@/components/Favorites.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/create-user',
       name: 'UserCreation',
       component: () => import('@/components/UserCreation.vue'),
