@@ -22,13 +22,13 @@
       <transition name="fade">
         <div
           v-if="showPostModal"
-          class="fixed inset-0 z-50 flex items-center justify-center"
+          class="fixed inset-0 z-50 flex justify-center items-start md:items-center overflow-y-auto"
         >
           <div
             class="absolute inset-0 bg-black/70"
             @click="closePostModal"
           ></div>
-          <div class="relative z-10 w-full max-w-xl mx-4">
+          <div class="relative z-10 w-full max-w-xl mx-4 my-6 md:my-0 max-h-[90vh] overflow-y-auto md:max-h-none md:overflow-visible">
             <button
               @click="closePostModal"
               class="absolute right-4 top-4 z-10 text-gray-400 hover:text-white transition"
@@ -133,6 +133,9 @@ const handleVisibilityChange = () => {
     // Pause all update intervals
     updateIntervals.forEach((interval) => clearInterval(interval))
     updateIntervals.clear()
+    postsStore.cancelActiveFetch('visibility-hidden')
+    isRefreshing.value = false
+    pullDistance.value = 0
   } else {
     // Resume updates for visible posts
     postElements.forEach((el, postId) => {
@@ -165,7 +168,7 @@ const setupVisibilityObserver = (postId, el) => {
     (entries) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting && document.visibilityState === 'visible') {
-          startUpdate(postId)
+          // startUpdate(postId) // temporarily disabled
         } else {
           stopUpdate(postId)
         }
@@ -180,7 +183,6 @@ const setupVisibilityObserver = (postId, el) => {
   observer.observe(el)
   visibilityObservers.set(postId, observer)
 }
-
 const cleanupVisibilityObserver = (postId) => {
   const observer = visibilityObservers.get(postId)
   if (observer) {
@@ -269,21 +271,36 @@ onMounted(async () => {
 })
 
 const manualRefresh = async () => {
-  if (isRefreshing.value) return
+  console.log('manualRefresh called')
+  if (isRefreshing.value) {
+    console.log('already refreshing, return')
+    return
+  }
+  postsStore.cancelActiveFetch('manual-refresh')
   isRefreshing.value = true
-  await postsStore.fetchPosts({ reset: true })
-  isRefreshing.value = false
+  console.log('starting refresh')
+  try {
+    await postsStore.fetchPosts({ reset: true })
+    console.log('fetchPosts completed')
+  } finally {
+    isRefreshing.value = false
+    console.log('refresh finished')
+  }
 }
 
 const doRefresh = async () => {
   // only one refresh at a time
   if (isRefreshing.value) return
   isDragging.value = false
+  postsStore.cancelActiveFetch('pull-refresh')
   isRefreshing.value = true
-  await postsStore.fetchPosts({ reset: true })
-  // reset pull visual
-  pullDistance.value = 0
-  isRefreshing.value = false
+  try {
+    await postsStore.fetchPosts({ reset: true })
+  } finally {
+    // reset pull visual
+    pullDistance.value = 0
+    isRefreshing.value = false
+  }
 }
 
 const onTouchStart = (e) => {

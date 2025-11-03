@@ -28,9 +28,11 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     initPromise = (async () => {
+      console.log('initializeAuth: starting')
       loading.value = true
       try {
         const { data: { session } } = await supabase.auth.getSession()
+        console.log('initializeAuth: session fetched', !!session)
         if (session?.user) {
           user.value = session.user
           await fetchProfile()
@@ -44,6 +46,7 @@ export const useAuthStore = defineStore('auth', () => {
 
       if (!authListenerAttached) {
         supabase.auth.onAuthStateChange(async (event, session) => {
+          console.log('auth state change:', event, !!session)
           if (session?.user) {
             user.value = session.user
             await fetchProfile()

@@ -75,7 +75,7 @@
     <!-- Preview Section -->
     <div v-if="previewData.title || previewData.content" ref="previewSection" class="mt-6 pt-6 border-t border-gray-700">
       <h4 class="text-gray-300 text-sm font-semibold mb-3">Pré-visualização</h4>
-      <div class="rounded-xl border border-gray-800 bg-gray-900/50 p-4 shadow-md">
+      <div class="rounded-xl border border-gray-800 bg-gray-900/50 p-4 shadow-md max-h-64 md:max-h-80 overflow-y-auto">
         <div class="flex items-start gap-3 mb-3">
           <div class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-gray-700 text-xs font-semibold">
             <span>{{ authStore.user?.username?.charAt(0).toUpperCase() || 'U' }}</span>
