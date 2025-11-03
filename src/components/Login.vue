@@ -38,10 +38,12 @@
 
 <script setup>
 import { ref } from 'vue'
-import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
+const authStore = useAuthStore()
+
 const email = ref('')
 const password = ref('')
 const loading = ref(false)
@@ -50,20 +52,15 @@ const error = ref('')
 const handleLogin = async () => {
   loading.value = true
   error.value = ''
-  try {
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: email.value,
-      password: password.value,
-    })
-    if (authError) {
-      error.value = authError.message
-    } else {
-      router.push('/feed')
-    }
-  } catch (err) {
-    error.value = 'Erro inesperado'
-  } finally {
-    loading.value = false
+
+  const result = await authStore.signIn(email.value, password.value)
+
+  if (!result.success) {
+    error.value = result.error
+  } else {
+    router.push('/feed')
   }
+
+  loading.value = false
 }
 </script>
