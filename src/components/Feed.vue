@@ -128,6 +128,25 @@ const isMobile = computed(() => window.matchMedia && window.matchMedia('(max-wid
 
 let loadObserver = null
 
+const handleVisibilityChange = () => {
+  if (document.visibilityState === 'hidden') {
+    // Pause all update intervals
+    updateIntervals.forEach((interval) => clearInterval(interval))
+    updateIntervals.clear()
+  } else {
+    // Resume updates for visible posts
+    postElements.forEach((el, postId) => {
+      const observer = visibilityObservers.get(postId)
+      if (observer) {
+        const isVisible = el.offsetParent !== null // Simple check if element is visible
+        if (isVisible) {
+          startUpdate(postId)
+        }
+      }
+    })
+  }
+}
+
 const registerPostRef = (postId, el) => {
   if (el) {
     postElements.set(postId, el)
@@ -145,7 +164,7 @@ const setupVisibilityObserver = (postId, el) => {
   const observer = new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
-        if (entry.isIntersecting) {
+        if (entry.isIntersecting && document.visibilityState === 'visible') {
           startUpdate(postId)
         } else {
           stopUpdate(postId)
@@ -175,8 +194,11 @@ const startUpdate = (postId) => {
   if (updateIntervals.has(postId)) return
 
   const interval = setInterval(async () => {
-    await postsStore.fetchPostUpdates(postId)
-  }, 5000) // 5 seconds
+    // Only update if page is visible and window is focused
+    if (document.visibilityState === 'visible' && document.hasFocus()) {
+      await postsStore.fetchPostUpdates(postId)
+    }
+  }, 10000) // 10 seconds
 
   updateIntervals.set(postId, interval)
 }
@@ -237,6 +259,8 @@ onMounted(async () => {
   if (postsStore.posts.length === 0) {
     await postsStore.fetchPosts()
   }
+
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 
   nextTick(() => {
     observeSentinel()
@@ -395,6 +419,7 @@ watch(
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
   if (loadObserver) {
     loadObserver.disconnect()
   }
